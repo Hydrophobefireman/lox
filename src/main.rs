@@ -1,4 +1,5 @@
 mod ast_printer;
+mod parser;
 mod program;
 mod scanner;
 mod tokens;

@@ -1,12 +1,12 @@
 use crate::tokens::token_type::TokenType;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum LiteralType {
     String(String),
     Float(f64),
     None,
 }
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Token {
     pub ty: TokenType,
     pub lexeme: String,

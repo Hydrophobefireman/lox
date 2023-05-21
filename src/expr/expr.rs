@@ -6,3 +6,10 @@ generate_expr_struct!(
     Literal, value: Option<Box<dyn std::any::Any>>;
     Unary, operator: Token, right: Box<Expr>
 );
+impl Default for Expr {
+    fn default() -> Self {
+        Expr::Literal(Literal {
+            value: Some(Box::new(0)),
+        })
+    }
+}
