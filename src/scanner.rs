@@ -1,8 +1,6 @@
-use std::collections::HashMap;
-
 use crate::program::Program;
-use crate::token::Token;
-use crate::token_type::TokenType::{self, *};
+use crate::tokens::token::{LiteralType, Token};
+use crate::tokens::token_type::TokenType::{self, *};
 
 pub struct Scanner<'a> {
     source: &'a str,
@@ -11,28 +9,10 @@ pub struct Scanner<'a> {
     current: usize,
     line: usize,
     program: &'a Program,
-    keywords: HashMap<&'a str, TokenType>,
 }
 
 impl<'a> Scanner<'a> {
     pub fn new(source: &'a str, p: &'a Program) -> Scanner<'a> {
-        let mut keywords: HashMap<&str, TokenType> = HashMap::new();
-        keywords.insert("and", And);
-        keywords.insert("class", Class);
-        keywords.insert("else", Else);
-        keywords.insert("false", False);
-        keywords.insert("for", For);
-        keywords.insert("fun", Fun);
-        keywords.insert("if", If);
-        keywords.insert("nil", Nil);
-        keywords.insert("or", Or);
-        keywords.insert("print", Print);
-        keywords.insert("return", Return);
-        keywords.insert("super", Super);
-        keywords.insert("this", This);
-        keywords.insert("true", True);
-        keywords.insert("var", Var);
-        keywords.insert("while", While);
         Scanner {
             source,
             tokens: Vec::new(),
@@ -40,7 +20,6 @@ impl<'a> Scanner<'a> {
             current: 0,
             line: 1,
             program: p,
-            keywords,
         }
     }
     #[inline]
@@ -53,7 +32,7 @@ impl<'a> Scanner<'a> {
             self.scan_token();
         }
         self.tokens
-            .push(Token::new(EOF, "".to_owned(), Some(Box::new(0)), self.line));
+            .push(Token::new(EOF, "".to_owned(), LiteralType::None, self.line));
         &self.tokens
     }
     #[inline]
@@ -67,7 +46,7 @@ impl<'a> Scanner<'a> {
         res as char
     }
     #[inline]
-    fn add_token(&mut self, t: TokenType, literal: Option<Box<dyn std::any::Any>>) {
+    fn add_token(&mut self, t: TokenType, literal: LiteralType) {
         let text = &self.source[self.start..self.current];
         self.tokens
             .push(Token::new(t, text.to_owned(), literal, self.line));
@@ -75,23 +54,23 @@ impl<'a> Scanner<'a> {
     fn scan_token(&mut self) {
         let c = self.advance();
         match c {
-            '(' => self.add_token(LeftParen, None),
-            ')' => self.add_token(RightParen, None),
-            '{' => self.add_token(LeftBrace, None),
-            '}' => self.add_token(RightBrace, None),
-            ',' => self.add_token(Comma, None),
-            '.' => self.add_token(Dot, None),
-            '-' => self.add_token(Minus, None),
-            '+' => self.add_token(Plus, None),
-            ';' => self.add_token(Semicolon, None),
-            '*' => self.add_token(Star, None),
+            '(' => self.add_token(LeftParen, LiteralType::None),
+            ')' => self.add_token(RightParen, LiteralType::None),
+            '{' => self.add_token(LeftBrace, LiteralType::None),
+            '}' => self.add_token(RightBrace, LiteralType::None),
+            ',' => self.add_token(Comma, LiteralType::None),
+            '.' => self.add_token(Dot, LiteralType::None),
+            '-' => self.add_token(Minus, LiteralType::None),
+            '+' => self.add_token(Plus, LiteralType::None),
+            ';' => self.add_token(Semicolon, LiteralType::None),
+            '*' => self.add_token(Star, LiteralType::None),
             '!' => {
                 let a = if self.consume_if('=') {
                     BangEqual
                 } else {
                     Bang
                 };
-                self.add_token(a, None)
+                self.add_token(a, LiteralType::None)
             }
             '=' => {
                 let a = if self.consume_if('=') {
@@ -99,7 +78,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Equal
                 };
-                self.add_token(a, None)
+                self.add_token(a, LiteralType::None)
             }
             '<' => {
                 let a = if self.consume_if('=') {
@@ -107,7 +86,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Less
                 };
-                self.add_token(a, None)
+                self.add_token(a, LiteralType::None)
             }
             '>' => {
                 let a = if self.consume_if('=') {
@@ -115,7 +94,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Greater
                 };
-                self.add_token(a, None)
+                self.add_token(a, LiteralType::None)
             }
             '/' => {
                 if self.consume_if('/') {
@@ -126,7 +105,7 @@ impl<'a> Scanner<'a> {
                         self.advance();
                     }
                 } else {
-                    self.add_token(Slash, None);
+                    self.add_token(Slash, LiteralType::None);
                 }
             }
             '0'..='9' => self.handle_number(),
@@ -151,11 +130,11 @@ impl<'a> Scanner<'a> {
         }
         self.add_token(
             Number,
-            Some(Box::new(
+            LiteralType::Float(
                 self.source[self.start..self.current]
-                    .parse::<f32>()
+                    .parse::<f64>()
                     .unwrap(),
-            )),
+            ),
         )
     }
 
@@ -172,12 +151,26 @@ impl<'a> Scanner<'a> {
             }
         }
         let text = &self.source[self.start..self.current];
-        let tt = self.keywords.get(text);
-        if let Some(ttype) = tt {
-            self.add_token(*ttype, None);
-        } else {
-            self.add_token(Identifier, None);
-        }
+        let tt = match text {
+            "and" => And,
+            "class" => Class,
+            "else" => Else,
+            "false" => False,
+            "for" => For,
+            "fun" => Fun,
+            "if" => If,
+            "nil" => Nil,
+            "or" => Or,
+            "print" => Print,
+            "return" => Return,
+            "super" => Super,
+            "this" => This,
+            "true" => True,
+            "var" => Var,
+            "while" => While,
+            _ => Identifier,
+        };
+        self.add_token(tt, LiteralType::None);
     }
     fn handle_string(&mut self) {
         while self.peek().is_some() && self.peek().unwrap() != '"' {
@@ -194,7 +187,7 @@ impl<'a> Scanner<'a> {
 
         let value = self.source[(self.start + 1)..(self.current - 1)].to_owned();
 
-        self.add_token(String, Some(Box::new(value)));
+        self.add_token(String, LiteralType::String(value));
 
         // todo!("add support for escape sequences");
     }

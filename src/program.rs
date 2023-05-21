@@ -3,6 +3,7 @@ use std::io::{self, BufRead, Write};
 use std::process::exit;
 
 use crate::scanner::Scanner;
+
 pub struct Program {
     had_error: bool,
 }
@@ -15,6 +16,7 @@ impl Program {
     fn run(&self, line: &str) {
         let mut scanner = Scanner::new(line, self);
         let tokens = scanner.scan_tokens();
+
         for token in tokens {
             dbg!(token);
         }

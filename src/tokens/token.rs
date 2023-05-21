@@ -1,19 +1,21 @@
-use crate::token_type::TokenType;
+use crate::tokens::token_type::TokenType;
+
+#[derive(Debug)]
+pub enum LiteralType {
+    String(String),
+    Float(f64),
+    None,
+}
 #[derive(Debug)]
 pub struct Token {
-    ty: TokenType,
-    lexeme: String,
-    literal: Option<Box<dyn std::any::Any>>,
-    line: usize,
+    pub ty: TokenType,
+    pub lexeme: String,
+    pub literal: LiteralType,
+    pub line: usize,
 }
 
 impl Token {
-    pub fn new(
-        ty: TokenType,
-        lexeme: String,
-        literal: Option<Box<dyn std::any::Any>>,
-        line: usize,
-    ) -> Self {
+    pub fn new(ty: TokenType, lexeme: String, literal: LiteralType, line: usize) -> Self {
         Token {
             ty,
             lexeme,
