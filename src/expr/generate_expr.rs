@@ -9,7 +9,7 @@ macro_rules! generate_expr_struct {
             )*
         }
 
-        $(pub struct $variant {
+        $(#[derive(Debug)] pub struct $variant {
              $(pub $field: $ty),*
         }
 
@@ -27,6 +27,7 @@ macro_rules! generate_expr_struct {
         })*
 
         #[allow(dead_code)]
+        #[derive(Debug)]
         pub enum Expr {
 
             $(

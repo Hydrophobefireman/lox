@@ -4,6 +4,9 @@ use crate::tokens::token_type::TokenType;
 pub enum LiteralType {
     String(String),
     Float(f64),
+    True,
+    False,
+    Nil,
     None,
 }
 #[derive(Debug, Clone)]

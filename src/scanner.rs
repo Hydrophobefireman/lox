@@ -128,6 +128,7 @@ impl<'a> Scanner<'a> {
         while matches!(self.peek(), Some('0'..='9')) {
             self.advance();
         }
+     
         self.add_token(
             Number,
             LiteralType::Float(

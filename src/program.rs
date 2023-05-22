@@ -2,6 +2,9 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::process::exit;
 
+use crate::ast_printer::AstPrinter;
+use crate::interpreter::Interpreter;
+use crate::parser::Parser;
 use crate::scanner::Scanner;
 
 pub struct Program {
@@ -16,16 +19,21 @@ impl Program {
     fn run(&self, line: &str) {
         let mut scanner = Scanner::new(line, self);
         let tokens = scanner.scan_tokens();
-
-        for token in tokens {
-            dbg!(token);
+        let mut parser = Parser::new(tokens, self);
+        let expr = parser.parse();
+        match expr {
+            Err(_) => (),
+            Ok(expr) => {
+                let i = Interpreter::new(self);
+                i.interpret(&expr);
+            }
         }
     }
 
     pub fn error(&self, line: usize, message: &str) {
         self.report(line, "", message);
     }
-    fn report(&self, line: usize, wh: &str, message: &str) {
+    pub fn report(&self, line: usize, wh: &str, message: &str) {
         println!("[line {line}] Error{wh}: {message}");
     }
 
