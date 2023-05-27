@@ -1,37 +1,27 @@
 use crate::{
-    errors::RuntimeError,
+    errors::{RuntimeError, RuntimeResult},
     expr::{Expr, Visitor},
-    program::Program,
     tokens::{
         token::{literal_to_float, LiteralType},
         token_type::TokenType,
     },
 };
 
-pub struct Interpreter<'a> {
-    program: &'a mut Program,
-}
+pub struct Interpreter {}
 
-impl<'a> Interpreter<'a> {
+impl Interpreter {
     #[inline]
-    fn evaluate(&self, e: &Expr) -> Result<LiteralType, RuntimeError> {
+    fn evaluate(&self, e: &Expr) -> RuntimeResult<LiteralType> {
         e.accept(self)
     }
 
     #[inline]
     fn is_truthy(&self, e: &LiteralType) -> bool {
-        matches!(e, LiteralType::False)
+        !matches!(e, LiteralType::False)
     }
-
+    #[inline]
     pub fn stringify(&self, e: LiteralType) -> String {
-        match e {
-            LiteralType::String(s) => s.clone(),
-            LiteralType::Float(f) => f.to_string(),
-            LiteralType::True => "true".into(),
-            LiteralType::False => "false".into(),
-            LiteralType::Nil => "Nil".into(),
-            LiteralType::None => "?(unresolved)".into(),
-        }
+        e.to_string()
     }
     pub fn interpret(&self, e: &Expr) -> Result<(), RuntimeError> {
         let val = self.evaluate(e)?;
@@ -39,8 +29,8 @@ impl<'a> Interpreter<'a> {
         Ok(())
     }
 
-    pub fn new(program: &'a mut Program) -> Self {
-        Self { program }
+    pub fn new() -> Self {
+        Self {}
     }
 
     fn is_equal(&self, left: &LiteralType, right: &LiteralType) -> bool {
@@ -56,11 +46,10 @@ impl<'a> Interpreter<'a> {
     }
 }
 
-impl<'a> Visitor<Result<LiteralType, RuntimeError>> for Interpreter<'a> {
-    fn Binary(&self, e: &crate::expr::Binary) -> Result<LiteralType, RuntimeError> {
+impl Visitor<RuntimeResult<LiteralType>> for Interpreter {
+    fn Binary(&self, e: &crate::expr::Binary) -> RuntimeResult<LiteralType> {
         let left = self.evaluate(&e.left)?;
         let right = self.evaluate(&e.right)?;
-
         match e.operator.ty {
             TokenType::Minus => Ok(LiteralType::Float(
                 literal_to_float(left)? - literal_to_float(right)?,
@@ -81,7 +70,7 @@ impl<'a> Visitor<Result<LiteralType, RuntimeError>> for Interpreter<'a> {
                 }
 
                 [LiteralType::Float(l), LiteralType::Float(r)] => Ok(LiteralType::Float(l + r)),
-                [_, _] => Err(RuntimeError::new("Invalid addition")),
+                [_, _] => Err(RuntimeError::new("Invalid addition", e.operator.line)),
             },
             TokenType::Greater => Ok(LiteralType::from(
                 literal_to_float(left)? > literal_to_float(right)?,
@@ -100,25 +89,32 @@ impl<'a> Visitor<Result<LiteralType, RuntimeError>> for Interpreter<'a> {
             TokenType::EqualEqual => Ok(LiteralType::from(self.is_equal(&left, &right))),
             _ => panic!("?"),
         }
+        .map_err(|err| RuntimeError::new(&err.message, e.operator.line))
     }
 
     #[inline]
-    fn Grouping(&self, e: &crate::expr::Grouping) -> Result<LiteralType, RuntimeError> {
+    fn Grouping(&self, e: &crate::expr::Grouping) -> RuntimeResult<LiteralType> {
         self.evaluate(&e.expression)
     }
 
     #[inline]
-    fn Literal(&self, e: &crate::expr::Literal) -> Result<LiteralType, RuntimeError> {
+    fn Literal(&self, e: &crate::expr::Literal) -> RuntimeResult<LiteralType> {
         Ok(e.value.clone())
     }
 
-    fn Unary(&self, e: &crate::expr::Unary) -> Result<LiteralType, RuntimeError> {
+    fn Unary(&self, e: &crate::expr::Unary) -> RuntimeResult<LiteralType> {
         let right = self.evaluate(&e.right)?;
         match e.operator.ty {
-            TokenType::Plus => Err(RuntimeError::new("+{value} is not supported")),
+            TokenType::Plus => Err(RuntimeError::new(
+                "+{value} is not supported",
+                e.operator.line,
+            )),
             TokenType::Minus => match right {
                 LiteralType::Float(f) => Ok(LiteralType::Float(-f)),
-                _ => Err(RuntimeError::new("Cannot perform negation on non number")),
+                _ => Err(RuntimeError::new(
+                    "Cannot perform negation on non number",
+                    e.operator.line,
+                )),
             },
             TokenType::Bang => Ok(LiteralType::from(!self.is_truthy(&right))),
             _ => panic!("?"),

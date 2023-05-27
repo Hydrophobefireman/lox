@@ -1,4 +1,4 @@
-use crate::program::Program;
+use crate::errors::{ScanError, ScanResult};
 use crate::tokens::token::{LiteralType, Token};
 use crate::tokens::token_type::TokenType::{self, *};
 
@@ -8,32 +8,30 @@ pub struct Scanner<'a> {
     start: usize,
     current: usize,
     line: usize,
-    program: &'a Program,
 }
 
 impl<'a> Scanner<'a> {
-    pub fn new(source: &'a str, p: &'a Program) -> Scanner<'a> {
+    pub fn new(source: &'a str) -> Scanner<'a> {
         Scanner {
             source,
             tokens: Vec::new(),
             start: 0,
             current: 0,
             line: 1,
-            program: p,
         }
     }
     #[inline]
     fn is_at_end(&self) -> bool {
         self.current >= self.source.len()
     }
-    pub fn scan_tokens(&mut self) -> &Vec<Token> {
+    pub fn scan_tokens(mut self) -> ScanResult<Vec<Token>> {
         while !self.is_at_end() {
             self.start = self.current;
-            self.scan_token();
+            self.scan_token()?;
         }
         self.tokens
             .push(Token::new(EOF, "".to_owned(), LiteralType::None, self.line));
-        &self.tokens
+        Ok(self.tokens)
     }
     #[inline]
     fn curr_char(&self) -> char {
@@ -43,7 +41,7 @@ impl<'a> Scanner<'a> {
     fn advance(&mut self) -> char {
         let res = self.curr_char();
         self.current += 1;
-        res as char
+        return res as char;
     }
     #[inline]
     fn add_token(&mut self, t: TokenType, literal: LiteralType) {
@@ -51,7 +49,7 @@ impl<'a> Scanner<'a> {
         self.tokens
             .push(Token::new(t, text.to_owned(), literal, self.line));
     }
-    fn scan_token(&mut self) {
+    fn scan_token(&mut self) -> ScanResult<()> {
         let c = self.advance();
         match c {
             '(' => self.add_token(LeftParen, LiteralType::None),
@@ -111,12 +109,11 @@ impl<'a> Scanner<'a> {
             '0'..='9' => self.handle_number(),
             ' ' | '\r' | '\t' => (),
             '\n' => self.line += 1,
-            '"' => self.handle_string(),
+            '"' => self.handle_string()?,
             'a'..='z' | 'A'..='Z' | '_' => self.handle_identifier(),
-            _ => self
-                .program
-                .error(self.line, &format!("Unexpected token: {c}")),
-        }
+            _ => Err(ScanError::new(&format!("Unexpected token: {c}"), self.line))?,
+        };
+        Ok(())
     }
     fn handle_number(&mut self) {
         while matches!(self.peek(), Some('0'..='9')) {
@@ -128,7 +125,7 @@ impl<'a> Scanner<'a> {
         while matches!(self.peek(), Some('0'..='9')) {
             self.advance();
         }
-     
+
         self.add_token(
             Number,
             LiteralType::Float(
@@ -173,7 +170,7 @@ impl<'a> Scanner<'a> {
         };
         self.add_token(tt, LiteralType::None);
     }
-    fn handle_string(&mut self) {
+    fn handle_string(&mut self) -> ScanResult<()> {
         while self.peek().is_some() && self.peek().unwrap() != '"' {
             if self.peek().unwrap() == '\n' {
                 self.line += 1;
@@ -182,14 +179,14 @@ impl<'a> Scanner<'a> {
         }
 
         if self.is_at_end() {
-            self.program.error(self.line, "Unterminated string");
+            return Err(ScanError::new("Unterminated string", self.line));
         }
         self.advance();
 
         let value = self.source[(self.start + 1)..(self.current - 1)].to_owned();
 
         self.add_token(String, LiteralType::String(value));
-
+        Ok(())
         // todo!("add support for escape sequences");
     }
 

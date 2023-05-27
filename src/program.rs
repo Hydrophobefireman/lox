@@ -2,7 +2,6 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::process::exit;
 
-use crate::ast_printer::AstPrinter;
 use crate::interpreter::Interpreter;
 use crate::parser::Parser;
 use crate::scanner::Scanner;
@@ -20,17 +19,29 @@ impl Program {
     }
 }
 impl Program {
-    fn run(&mut self, line: &str) {
-        let mut scanner = Scanner::new(line, self);
+    fn run(&mut self, line: &str) -> () {
+        if line.is_empty() {
+            return;
+        }
+        let scanner = Scanner::new(line);
         let tokens = scanner.scan_tokens();
-        let mut parser = Parser::new(tokens, self);
-        let expr = parser.parse();
-        match expr {
-            Err(_) => (),
-            Ok(expr) => {
-                let i = Interpreter::new(self);
-                i.interpret(&expr);
+
+        match tokens {
+            Ok(tokens) => {
+                let mut parser = Parser::new(&tokens);
+                let expr = parser.parse();
+                match expr {
+                    Ok(expr) => {
+
+                        let i = Interpreter::new();
+                        if let Err(r) = i.interpret(&expr) {
+                            self.runtime_error(0, &r.message);
+                        };
+                    }
+                    Err(err) => self.error(err.line, "An error occured while parsing"),
+                }
             }
+            Err(err) => self.error(err.line, &err.message),
         }
     }
 
@@ -50,19 +61,19 @@ impl Program {
     pub fn repl(&mut self) -> io::Result<()> {
         let input = io::stdin();
         let mut reader = input.lock();
-        Ok(loop {
+        loop {
             print!("> ");
             io::stdout().flush()?;
             let mut line = String::new();
             reader.read_line(&mut line)?;
             if line.is_empty() {
-                break;
+                break Ok(());
             }
             self.run(line.trim());
             io::stdout().flush()?;
             self.had_error = false;
             self.had_runtime_error = false;
-        })
+        }
     }
 
     pub fn run_script(&mut self, file: String) -> io::Result<()> {

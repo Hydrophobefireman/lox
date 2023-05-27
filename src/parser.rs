@@ -1,6 +1,6 @@
 use crate::{
+    errors::{ParseError, ParseResult},
     expr::{Binary, Expr, Grouping, Literal, Unary},
-    program::Program,
     tokens::{
         token::{LiteralType, Token},
         token_type::TokenType,
@@ -10,7 +10,6 @@ use crate::{
 pub struct Parser<'a> {
     tokens: &'a Vec<Token>,
     current: usize,
-    program: &'a Program,
 }
 macro_rules! check {
     ($p:expr,  $(|)? $( $pattern:pat_param )|+) => {
@@ -22,28 +21,24 @@ macro_rules! check {
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a Vec<Token>, program: &'a Program) -> Self {
-        Parser {
-            current: 0,
-            tokens,
-            program,
-        }
+    pub fn new(tokens: &'a Vec<Token>) -> Self {
+        Parser { current: 0, tokens }
     }
 
     #[inline]
-    pub fn parse(&mut self) -> Result<Expr, ()> {
+    pub fn parse(&mut self) -> ParseResult<Expr> {
         self.expression()
     }
 
     #[inline]
-    fn expression(&mut self) -> Result<Expr, ()> {
+    fn expression(&mut self) -> ParseResult<Expr> {
         self.equality()
     }
 
-    fn equality(&mut self) -> Result<Expr, ()> {
-        use crate::tokens::token_type::TokenType::{Bang, BangEqual};
+    fn equality(&mut self) -> ParseResult<Expr> {
+        use crate::tokens::token_type::TokenType::{BangEqual, EqualEqual};
         let mut expr = self.comparision()?;
-        while check!(self.peek(), Bang | BangEqual) {
+        while check!(self.peek(), EqualEqual | BangEqual) {
             let operator = (*self.advance()).clone();
             let right = self.comparision()?;
             expr = Expr::Binary(Binary::new(Box::new(expr), operator, Box::new(right)))
@@ -51,7 +46,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn comparision(&mut self) -> Result<Expr, ()> {
+    fn comparision(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{Greater, GreaterEqual, Less, LessEqual};
 
         let mut expr = self.term()?;
@@ -63,7 +58,7 @@ impl<'a> Parser<'a> {
         }
         Ok(expr)
     }
-    fn term(&mut self) -> Result<Expr, ()> {
+    fn term(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{Minus, Plus};
         let mut expr = self.factor()?;
 
@@ -75,7 +70,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn factor(&mut self) -> Result<Expr, ()> {
+    fn factor(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{Slash, Star};
         let mut expr = self.unary()?;
         while check!(self.peek(), Slash | Star) {
@@ -86,7 +81,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expr, ()> {
+    fn unary(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{Bang, Minus};
 
         if check!(self.peek(), Bang | Minus) {
@@ -97,7 +92,7 @@ impl<'a> Parser<'a> {
             self.primary()
         }
     }
-    fn primary(&mut self) -> Result<Expr, ()> {
+    fn primary(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{
             False, LeftParen, Nil, Number, RightParen, String, True,
         };
@@ -113,11 +108,12 @@ impl<'a> Parser<'a> {
             }
             _ => {
                 self.current -= 1; // did not match anything, backtrack
-                self.error::<Expr>(self.peek().unwrap(), "Expected expression")?
+                let val = self.peek().unwrap();
+                self.error::<Expr>(&val.clone(), "Expected expression")?
             }
         })
     }
-
+    #[allow(dead_code)]
     fn synchronize(&mut self) {
         self.advance();
         while !self.is_at_end() {
@@ -139,21 +135,18 @@ impl<'a> Parser<'a> {
         }
     }
     #[inline]
-    fn error<T>(&self, t: &Token, err: &str) -> Result<T, ()> {
-        match t.ty {
-            TokenType::EOF => self.program.error(t.line, &format!(" at the end {err}")),
-            _ => self
-                .program
-                .error(t.line, &format!(" at '{}' {}", t.lexeme, err)),
-        };
-        Err(())
+    fn error<T>(&mut self, t: &Token, err: &str) -> ParseResult<T> {
+        Err(match t.ty {
+            TokenType::EOF => ParseError::new(&format!(" at the end {err}"), t.line),
+            _ => ParseError::new(&format!(" at '{}' {}", t.lexeme, err), t.line),
+        })
     }
     #[inline]
-    fn consume(&mut self, x: TokenType, err: &str) -> Result<&Token, ()> {
+    fn consume(&mut self, x: TokenType, err: &str) -> ParseResult<&Token> {
         if self.peek().unwrap().ty == x {
             Ok(self.advance())
         } else {
-            let token = self.peek().unwrap();
+            let token = &self.peek().unwrap().clone();
             self.error(token, err)
         }
     }

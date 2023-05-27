@@ -1,5 +1,3 @@
-use std::error::Error;
-
 use crate::{errors::RuntimeError, tokens::token_type::TokenType};
 
 #[derive(Debug, Clone)]
@@ -11,7 +9,18 @@ pub enum LiteralType {
     Nil,
     None,
 }
-
+impl ToString for LiteralType {
+    fn to_string(&self) -> String {
+        match self {
+            LiteralType::String(s) => s.clone(),
+            LiteralType::Float(f) => f.to_string(),
+            LiteralType::True => "true".into(),
+            LiteralType::False => "false".into(),
+            LiteralType::Nil => "nil".into(),
+            LiteralType::None => "(?unresolved?)".into(),
+        }
+    }
+}
 impl From<bool> for LiteralType {
     fn from(value: bool) -> Self {
         return if value {
@@ -24,7 +33,7 @@ impl From<bool> for LiteralType {
 pub fn literal_to_float(x: LiteralType) -> Result<f64, RuntimeError> {
     match x {
         LiteralType::Float(v) => Ok(v),
-        _ => Err(RuntimeError::new("Cannot convert to float")),
+        _ => Err(RuntimeError::new("Cannot convert to float", 0)),
     }
 }
 
