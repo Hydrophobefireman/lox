@@ -4,6 +4,7 @@ mod program;
 mod scanner;
 mod tokens;
 mod interpreter;
+mod errors;
 use std::{env, io};
 mod expr;
 use program::Program;

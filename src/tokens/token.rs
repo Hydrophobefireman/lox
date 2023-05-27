@@ -1,4 +1,6 @@
-use crate::tokens::token_type::TokenType;
+use std::error::Error;
+
+use crate::{errors::RuntimeError, tokens::token_type::TokenType};
 
 #[derive(Debug, Clone)]
 pub enum LiteralType {
@@ -9,6 +11,23 @@ pub enum LiteralType {
     Nil,
     None,
 }
+
+impl From<bool> for LiteralType {
+    fn from(value: bool) -> Self {
+        return if value {
+            LiteralType::True
+        } else {
+            LiteralType::False
+        };
+    }
+}
+pub fn literal_to_float(x: LiteralType) -> Result<f64, RuntimeError> {
+    match x {
+        LiteralType::Float(v) => Ok(v),
+        _ => Err(RuntimeError::new("Cannot convert to float")),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Token {
     pub ty: TokenType,

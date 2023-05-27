@@ -141,10 +141,10 @@ impl<'a> Parser<'a> {
     #[inline]
     fn error<T>(&self, t: &Token, err: &str) -> Result<T, ()> {
         match t.ty {
-            TokenType::EOF => self.program.report(t.line, " at the end", err),
+            TokenType::EOF => self.program.error(t.line, &format!(" at the end {err}")),
             _ => self
                 .program
-                .report(t.line, &format!(" at '{}'", t.lexeme), err),
+                .error(t.line, &format!(" at '{}' {}", t.lexeme, err)),
         };
         Err(())
     }

@@ -9,14 +9,18 @@ use crate::scanner::Scanner;
 
 pub struct Program {
     had_error: bool,
+    had_runtime_error: bool,
 }
 impl Program {
     pub fn new() -> Program {
-        Program { had_error: false }
+        Program {
+            had_error: false,
+            had_runtime_error: false,
+        }
     }
 }
 impl Program {
-    fn run(&self, line: &str) {
+    fn run(&mut self, line: &str) {
         let mut scanner = Scanner::new(line, self);
         let tokens = scanner.scan_tokens();
         let mut parser = Parser::new(tokens, self);
@@ -30,11 +34,17 @@ impl Program {
         }
     }
 
-    pub fn error(&self, line: usize, message: &str) {
+    pub fn error(&mut self, line: usize, message: &str) {
         self.report(line, "", message);
+        self.had_error = true;
     }
     pub fn report(&self, line: usize, wh: &str, message: &str) {
         println!("[line {line}] Error{wh}: {message}");
+    }
+
+    fn runtime_error(&mut self, line: usize, message: &str) {
+        self.report(line, "", message);
+        self.had_runtime_error = true;
     }
 
     pub fn repl(&mut self) -> io::Result<()> {
@@ -50,16 +60,20 @@ impl Program {
             }
             self.run(line.trim());
             io::stdout().flush()?;
-            self.had_error = false
+            self.had_error = false;
+            self.had_runtime_error = false;
         })
     }
 
-    pub fn run_script(&self, file: String) -> io::Result<()> {
+    pub fn run_script(&mut self, file: String) -> io::Result<()> {
         let content = fs::read_to_string(file)?;
 
         self.run(&content);
         if self.had_error {
             exit(65);
+        }
+        if self.had_runtime_error {
+            exit(70);
         }
         Ok(())
     }

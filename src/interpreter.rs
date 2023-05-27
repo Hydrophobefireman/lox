@@ -1,161 +1,126 @@
 use crate::{
+    errors::RuntimeError,
     expr::{Expr, Visitor},
     program::Program,
-    tokens::token_type::TokenType,
+    tokens::{
+        token::{literal_to_float, LiteralType},
+        token_type::TokenType,
+    },
 };
 
 pub struct Interpreter<'a> {
-    program: &'a Program,
+    program: &'a mut Program,
 }
 
 impl<'a> Interpreter<'a> {
     #[inline]
-    fn evaluate(&self, e: &Expr) -> Box<dyn std::any::Any> {
+    fn evaluate(&self, e: &Expr) -> Result<LiteralType, RuntimeError> {
         e.accept(self)
     }
 
     #[inline]
-    fn is_truthy(&self, e: &dyn std::any::Any) -> bool {
-        match e.downcast_ref::<bool>() {
-            Some(val) => *val,
-            None => match e.downcast_ref::<Option<i32>>() {
-                Some(v) => v.is_some(),
-                None => true,
-            },
-        }
-    }
-    #[inline]
-    fn cast<F: FnOnce() -> f64>(&self, x: Box<dyn std::any::Any>, or_else: F) -> f64 {
-        match x.downcast_ref::<f64>() {
-            None => or_else(),
-            Some(val) => *val,
-        }
+    fn is_truthy(&self, e: &LiteralType) -> bool {
+        matches!(e, LiteralType::False)
     }
 
-    pub fn stringify(&self, e: Box<dyn std::any::Any>) -> String {
-        match e.downcast_ref::<f64>() {
-            Some(v) => v.to_string(),
-            None => match e.downcast_ref::<String>() {
-                Some(v) => v.to_owned(),
-                None => match e.downcast_ref::<bool>() {
-                    Some(val) => val.to_string(),
-                    None => match e.downcast_ref::<Option<i32>>() {
-                        Some(v) => {
-                            if v.is_none() {
-                                "Nil".into()
-                            } else {
-                                "??".into()
-                            }
-                        }
-                        None => "???".into(),
-                    },
-                },
-            },
+    pub fn stringify(&self, e: LiteralType) -> String {
+        match e {
+            LiteralType::String(s) => s.clone(),
+            LiteralType::Float(f) => f.to_string(),
+            LiteralType::True => "true".into(),
+            LiteralType::False => "false".into(),
+            LiteralType::Nil => "Nil".into(),
+            LiteralType::None => "?(unresolved)".into(),
         }
     }
-    pub fn interpret(&self, e: &Expr) {
-        let val = self.evaluate(e);
+    pub fn interpret(&self, e: &Expr) -> Result<(), RuntimeError> {
+        let val = self.evaluate(e)?;
         dbg!(self.stringify(val));
+        Ok(())
     }
 
-    pub fn new(program: &'a Program) -> Self {
+    pub fn new(program: &'a mut Program) -> Self {
         Self { program }
     }
 
-    fn is_equal(&self, left: &dyn std::any::Any, right: &dyn std::any::Any) -> bool {
-        match left.downcast_ref::<bool>() {
-            Some(val) => right.downcast_ref::<bool>().unwrap_or(&!*val) == val,
-            None => match left.downcast_ref::<Option<i32>>() {
-                Some(v) => v.is_some() && right.downcast_ref::<Option<i32>>().is_some(),
-                None => match left.downcast_ref::<String>() {
-                    None => false,
-                    Some(st) => match right.downcast_ref::<String>() {
-                        None => false,
-                        Some(r_str) => st == r_str,
-                    },
-                },
-            },
+    fn is_equal(&self, left: &LiteralType, right: &LiteralType) -> bool {
+        match [left, right] {
+            [LiteralType::String(l), LiteralType::String(r)] => *l == *r,
+            [LiteralType::Float(l), LiteralType::Float(r)] => *l == *r,
+            [LiteralType::Nil, LiteralType::Nil]
+            | [LiteralType::True, LiteralType::True]
+            | [LiteralType::False, LiteralType::False]
+            | [LiteralType::None, LiteralType::None] => true,
+            _ => false,
         }
     }
 }
 
-impl<'a> Visitor<Box<dyn std::any::Any>> for Interpreter<'a> {
-    fn Binary(&self, e: &crate::expr::Binary) -> Box<dyn std::any::Any> {
-        let left = self.evaluate(&e.left);
-        let right = self.evaluate(&e.right);
-        let or_else = || {
-            self.program
-                .error(0, "Cannot perform action on non number value");
-            return 0_f64;
-        };
+impl<'a> Visitor<Result<LiteralType, RuntimeError>> for Interpreter<'a> {
+    fn Binary(&self, e: &crate::expr::Binary) -> Result<LiteralType, RuntimeError> {
+        let left = self.evaluate(&e.left)?;
+        let right = self.evaluate(&e.right)?;
 
         match e.operator.ty {
-            TokenType::Minus => Box::new(self.cast(left, or_else) - self.cast(right, or_else)),
+            TokenType::Minus => Ok(LiteralType::Float(
+                literal_to_float(left)? - literal_to_float(right)?,
+            )),
 
-            TokenType::Slash => Box::new(self.cast(left, or_else) / self.cast(right, or_else)),
-            TokenType::Star => Box::new(self.cast(left, or_else) * self.cast(right, or_else)),
+            TokenType::Slash => Ok(LiteralType::Float(
+                literal_to_float(left)? / literal_to_float(right)?,
+            )),
+            TokenType::Star => Ok(LiteralType::Float(
+                literal_to_float(left)? * literal_to_float(right)?,
+            )),
 
-            TokenType::Plus => {
-                if left.downcast_ref::<f64>().is_some() && right.downcast_ref::<f64>().is_some() {
-                    Box::new(self.cast(left, or_else) + self.cast(right, or_else))
-                } else if left.downcast_ref::<String>().is_some()
-                    && right.downcast_ref::<String>().is_some()
-                {
-                    let mut res = left.downcast_ref::<String>().unwrap().clone();
-                    res.push_str(right.downcast_ref::<String>().unwrap());
-                    Box::new(res)
-                } else {
-                    self.program.error(0, "Unknown values being added!");
-                    Box::new(None::<i32>)
+            TokenType::Plus => match [&left, &right] {
+                [LiteralType::String(left_str), LiteralType::String(right_str)] => {
+                    let mut res = left_str.clone();
+                    res.push_str(&right_str);
+                    Ok(LiteralType::String(res))
                 }
-            }
-            TokenType::Greater => Box::new(self.cast(left, or_else) > self.cast(right, or_else)),
-            TokenType::GreaterEqual => {
-                Box::new(self.cast(left, or_else) >= self.cast(right, or_else))
-            }
-            TokenType::Less => Box::new(self.cast(left, or_else) < self.cast(right, or_else)),
-            TokenType::LessEqual => Box::new(self.cast(left, or_else) <= self.cast(right, or_else)),
 
-            TokenType::BangEqual => Box::new(!self.is_equal(&left, &right)),
-            TokenType::EqualEqual => Box::new(self.is_equal(&left, &right)),
+                [LiteralType::Float(l), LiteralType::Float(r)] => Ok(LiteralType::Float(l + r)),
+                [_, _] => Err(RuntimeError::new("Invalid addition")),
+            },
+            TokenType::Greater => Ok(LiteralType::from(
+                literal_to_float(left)? > literal_to_float(right)?,
+            )),
+            TokenType::GreaterEqual => Ok(LiteralType::from(
+                literal_to_float(left)? >= literal_to_float(right)?,
+            )),
+            TokenType::Less => Ok(LiteralType::from(
+                literal_to_float(left)? < literal_to_float(right)?,
+            )),
+            TokenType::LessEqual => Ok(LiteralType::from(
+                literal_to_float(left)? <= literal_to_float(right)?,
+            )),
+
+            TokenType::BangEqual => Ok(LiteralType::from(!self.is_equal(&left, &right))),
+            TokenType::EqualEqual => Ok(LiteralType::from(self.is_equal(&left, &right))),
             _ => panic!("?"),
         }
     }
 
     #[inline]
-    fn Grouping(&self, e: &crate::expr::Grouping) -> Box<dyn std::any::Any> {
+    fn Grouping(&self, e: &crate::expr::Grouping) -> Result<LiteralType, RuntimeError> {
         self.evaluate(&e.expression)
     }
 
     #[inline]
-    fn Literal(&self, e: &crate::expr::Literal) -> Box<dyn std::any::Any> {
-        match &e.value {
-            crate::tokens::token::LiteralType::String(s) => Box::new(s.clone()),
-            crate::tokens::token::LiteralType::Float(num) => Box::new(*num),
-            crate::tokens::token::LiteralType::True => Box::new(true),
-            crate::tokens::token::LiteralType::False => Box::new(false),
-            crate::tokens::token::LiteralType::Nil => Box::new(None::<i32>),
-            crate::tokens::token::LiteralType::None => panic!("unreachable"),
-        }
+    fn Literal(&self, e: &crate::expr::Literal) -> Result<LiteralType, RuntimeError> {
+        Ok(e.value.clone())
     }
 
-    fn Unary(&self, e: &crate::expr::Unary) -> Box<dyn std::any::Any> {
-        let right = self.evaluate(&e.right);
+    fn Unary(&self, e: &crate::expr::Unary) -> Result<LiteralType, RuntimeError> {
+        let right = self.evaluate(&e.right)?;
         match e.operator.ty {
-            TokenType::Plus => {
-                self.program
-                    .report(0, "Runtime", "+{value} is not supported!");
-                Box::new(0_f64)
-            }
-            TokenType::Minus => match right.downcast_ref::<f64>() {
-                None => {
-                    self.program
-                        .report(0, "Invalid syntax", "- not supported here");
-                    Box::new(0_f64)
-                }
-                Some(val) => Box::new(-*val),
+            TokenType::Plus => Err(RuntimeError::new("+{value} is not supported")),
+            TokenType::Minus => match right {
+                LiteralType::Float(f) => Ok(LiteralType::Float(-f)),
+                _ => Err(RuntimeError::new("Cannot perform negation on non number")),
             },
-            TokenType::Bang => Box::new(!self.is_truthy(&right)),
+            TokenType::Bang => Ok(LiteralType::from(!self.is_truthy(&right))),
             _ => panic!("?"),
         }
     }
