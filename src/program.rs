@@ -5,23 +5,26 @@ use std::process::exit;
 use crate::interpreter::Interpreter;
 use crate::parser::Parser;
 use crate::scanner::Scanner;
+use crate::tokens::token::LiteralType;
 
 pub struct Program {
     had_error: bool,
     had_runtime_error: bool,
+    interpreter: Interpreter,
 }
 impl Program {
     pub fn new() -> Program {
         Program {
             had_error: false,
             had_runtime_error: false,
+            interpreter: Interpreter::new(),
         }
     }
 }
 impl Program {
-    fn run(&mut self, line: &str) -> () {
+    fn run(&mut self, line: &str) -> LiteralType {
         if line.is_empty() {
-            return;
+            return LiteralType::None;
         }
         let scanner = Scanner::new(line);
         let tokens = scanner.scan_tokens();
@@ -29,19 +32,31 @@ impl Program {
         match tokens {
             Ok(tokens) => {
                 let mut parser = Parser::new(&tokens);
-                let expr = parser.parse();
-                match expr {
-                    Ok(expr) => {
+                let stmts = parser.parse();
 
-                        let i = Interpreter::new();
-                        if let Err(r) = i.interpret(&expr) {
-                            self.runtime_error(0, &r.message);
-                        };
+                if stmts.iter().any(|f| f.is_err()) {
+                    self.had_error = true;
+                    stmts
+                        .iter()
+                        .filter_map(|f| f.as_ref().err())
+                        .for_each(|err| self.error(err.line, &err.message));
+                    return Default::default();
+                }
+
+                let stmts: Vec<_> = stmts.into_iter().map(Result::unwrap).collect();
+
+                match self.interpreter.interpret(stmts) {
+                    Err(r) => {
+                        self.runtime_error(0, &r.message);
+                        LiteralType::None
                     }
-                    Err(err) => self.error(err.line, "An error occured while parsing"),
+                    Ok(v) => v,
                 }
             }
-            Err(err) => self.error(err.line, &err.message),
+            Err(err) => {
+                self.error(err.line, &err.message);
+                LiteralType::None
+            }
         }
     }
 
@@ -69,7 +84,10 @@ impl Program {
             if line.is_empty() {
                 break Ok(());
             }
-            self.run(line.trim());
+            let res = self.run(line.trim());
+            if !matches!(res, LiteralType::None) {
+                println!("{}", res.to_string());
+            }
             io::stdout().flush()?;
             self.had_error = false;
             self.had_runtime_error = false;

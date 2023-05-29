@@ -1,12 +1,13 @@
 mod ast_printer;
+mod errors;
+mod interpreter;
 mod parser;
 mod program;
 mod scanner;
 mod tokens;
-mod interpreter;
-mod errors;
 use std::{env, io};
-mod expr;
+mod environment;
+mod syntax;
 use program::Program;
 
 fn main() -> io::Result<()> {

@@ -1,38 +1,53 @@
 use crate::{
+    environment::Environment,
     errors::{RuntimeError, RuntimeResult},
-    expr::{Expr, Visitor},
+    syntax::{
+        expr::{self, Binary, Expr, Grouping, Literal, Unary},
+        stmt::{self, Stmt},
+    },
     tokens::{
         token::{literal_to_float, LiteralType},
         token_type::TokenType,
     },
 };
 
-pub struct Interpreter {}
+pub struct Interpreter {
+    env: Environment,
+}
 
 impl Interpreter {
     #[inline]
-    fn evaluate(&self, e: &Expr) -> RuntimeResult<LiteralType> {
+    fn evaluate(&mut self, e: Expr) -> RuntimeResult<LiteralType> {
         e.accept(self)
     }
 
     #[inline]
-    fn is_truthy(&self, e: &LiteralType) -> bool {
+    fn is_truthy(&mut self, e: LiteralType) -> bool {
         !matches!(e, LiteralType::False)
     }
     #[inline]
-    pub fn stringify(&self, e: LiteralType) -> String {
+    pub fn stringify(&self, e: &LiteralType) -> String {
         e.to_string()
     }
-    pub fn interpret(&self, e: &Expr) -> Result<(), RuntimeError> {
-        let val = self.evaluate(e)?;
-        dbg!(self.stringify(val));
-        Ok(())
+    #[inline]
+    pub fn interpret(&mut self, statements: Vec<Stmt>) -> RuntimeResult<LiteralType> {
+        let mut result = Default::default();
+        for stmt in statements {
+            result = self.execute(stmt)?;
+        }
+        Ok(result)
     }
-
+    #[inline]
+    fn execute(&mut self, stmt: Stmt) -> RuntimeResult<LiteralType> {
+        Ok(stmt.accept(self)?)
+    }
+    #[inline]
     pub fn new() -> Self {
-        Self {}
+        Self {
+            env: Environment::new(None),
+        }
     }
-
+    #[inline]
     fn is_equal(&self, left: &LiteralType, right: &LiteralType) -> bool {
         match [left, right] {
             [LiteralType::String(l), LiteralType::String(r)] => *l == *r,
@@ -46,10 +61,10 @@ impl Interpreter {
     }
 }
 
-impl Visitor<RuntimeResult<LiteralType>> for Interpreter {
-    fn Binary(&self, e: &crate::expr::Binary) -> RuntimeResult<LiteralType> {
-        let left = self.evaluate(&e.left)?;
-        let right = self.evaluate(&e.right)?;
+impl expr::Visitor<RuntimeResult<LiteralType>> for Interpreter {
+    fn Binary(&mut self, e: Binary) -> RuntimeResult<LiteralType> {
+        let left = self.evaluate(*e.left)?;
+        let right = self.evaluate(*e.right)?;
         match e.operator.ty {
             TokenType::Minus => Ok(LiteralType::Float(
                 literal_to_float(left)? - literal_to_float(right)?,
@@ -64,13 +79,16 @@ impl Visitor<RuntimeResult<LiteralType>> for Interpreter {
 
             TokenType::Plus => match [&left, &right] {
                 [LiteralType::String(left_str), LiteralType::String(right_str)] => {
-                    let mut res = left_str.clone();
-                    res.push_str(&right_str);
-                    Ok(LiteralType::String(res))
+                    Ok(LiteralType::String(left_str.clone() + right_str))
                 }
 
                 [LiteralType::Float(l), LiteralType::Float(r)] => Ok(LiteralType::Float(l + r)),
-                [_, _] => Err(RuntimeError::new("Invalid addition", e.operator.line)),
+                [a, b] => Err(RuntimeError::new(
+                    &format!(
+                        "Invalid addition. Operands must be 2 strings or 2 numbers. Found: {a}, {b}"
+                    ),
+                    e.operator.line,
+                )),
             },
             TokenType::Greater => Ok(LiteralType::from(
                 literal_to_float(left)? > literal_to_float(right)?,
@@ -93,17 +111,17 @@ impl Visitor<RuntimeResult<LiteralType>> for Interpreter {
     }
 
     #[inline]
-    fn Grouping(&self, e: &crate::expr::Grouping) -> RuntimeResult<LiteralType> {
-        self.evaluate(&e.expression)
+    fn Grouping(&mut self, e: Grouping) -> RuntimeResult<LiteralType> {
+        self.evaluate(*e.expression)
     }
 
     #[inline]
-    fn Literal(&self, e: &crate::expr::Literal) -> RuntimeResult<LiteralType> {
-        Ok(e.value.clone())
+    fn Literal(&mut self, e: Literal) -> RuntimeResult<LiteralType> {
+        Ok(e.value)
     }
 
-    fn Unary(&self, e: &crate::expr::Unary) -> RuntimeResult<LiteralType> {
-        let right = self.evaluate(&e.right)?;
+    fn Unary(&mut self, e: Unary) -> RuntimeResult<LiteralType> {
+        let right = self.evaluate(*e.right)?;
         match e.operator.ty {
             TokenType::Plus => Err(RuntimeError::new(
                 "+{value} is not supported",
@@ -116,8 +134,40 @@ impl Visitor<RuntimeResult<LiteralType>> for Interpreter {
                     e.operator.line,
                 )),
             },
-            TokenType::Bang => Ok(LiteralType::from(!self.is_truthy(&right))),
+            TokenType::Bang => Ok(LiteralType::from(!self.is_truthy(right))),
             _ => panic!("?"),
         }
+    }
+
+    fn Variable(&mut self, e: expr::Variable) -> RuntimeResult<LiteralType> {
+        Ok(self.env.get(&e.name)?.clone())
+    }
+    fn Assign(&mut self, e: expr::Assign) -> RuntimeResult<LiteralType> {
+        let val = self.evaluate(*e.value)?;
+        self.env.assign(e.name, val.clone())?;
+        Ok(val)
+    }
+}
+
+impl stmt::Visitor<RuntimeResult<LiteralType>> for Interpreter {
+    fn Expression(&mut self, e: stmt::Expression) -> RuntimeResult<LiteralType> {
+        self.evaluate(e.expression)
+    }
+
+    fn Print(&mut self, e: stmt::Print) -> RuntimeResult<LiteralType> {
+        let ev = self.evaluate(e.expression)?;
+        let value = self.stringify(&ev);
+        println!("{value}");
+        Ok(LiteralType::None)
+    }
+
+    fn Var(&mut self, e: stmt::Var) -> RuntimeResult<LiteralType> {
+        let value = self.evaluate(e.initializer)?;
+        self.env.define(e.name.lexeme, value);
+        Ok(LiteralType::None)
+    }
+    fn Block(&mut self, e: stmt::Block) -> RuntimeResult<LiteralType> {
+        self.execute_block(e.statements, Environment::new(Some()))?;
+        Ok(LiteralType::Nil)
     }
 }

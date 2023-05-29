@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::{errors::RuntimeError, tokens::token_type::TokenType};
 
 #[derive(Debug, Clone)]
@@ -9,15 +11,16 @@ pub enum LiteralType {
     Nil,
     None,
 }
-impl ToString for LiteralType {
-    fn to_string(&self) -> String {
+
+impl Display for LiteralType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LiteralType::String(s) => s.clone(),
-            LiteralType::Float(f) => f.to_string(),
-            LiteralType::True => "true".into(),
-            LiteralType::False => "false".into(),
-            LiteralType::Nil => "nil".into(),
-            LiteralType::None => "(?unresolved?)".into(),
+            LiteralType::String(s) => write!(f, "{s}"),
+            LiteralType::Float(n) => write!(f, "{n}"),
+            LiteralType::True => write!(f, "true"),
+            LiteralType::False => write!(f, "false"),
+            LiteralType::Nil => write!(f, "nil"),
+            LiteralType::None => write!(f, "(?unresolved?)"),
         }
     }
 }
@@ -30,6 +33,13 @@ impl From<bool> for LiteralType {
         };
     }
 }
+
+impl Default for LiteralType {
+    fn default() -> Self {
+        LiteralType::None
+    }
+}
+
 pub fn literal_to_float(x: LiteralType) -> Result<f64, RuntimeError> {
     match x {
         LiteralType::Float(v) => Ok(v),

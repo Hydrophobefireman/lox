@@ -1,6 +1,9 @@
 use crate::{
     errors::{ParseError, ParseResult},
-    expr::{Binary, Expr, Grouping, Literal, Unary},
+    syntax::{
+        expr::{Assign, Binary, Expr, Grouping, Unary, Variable},
+        stmt::{Block, Expression, Print, Stmt, Var},
+    },
     tokens::{
         token::{LiteralType, Token},
         token_type::TokenType,
@@ -26,15 +29,113 @@ impl<'a> Parser<'a> {
     }
 
     #[inline]
-    pub fn parse(&mut self) -> ParseResult<Expr> {
-        self.expression()
+    pub fn parse(&mut self) -> Vec<ParseResult<Stmt>> {
+        let mut res = Vec::<ParseResult<Stmt>>::new();
+
+        while !self.is_at_end() {
+            res.push(self.declaration());
+        }
+
+        res
+    }
+
+    fn declaration(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::Var;
+        let res = if check!(self.peek(), Var) {
+            self.advance();
+            self.var_declaration()
+        } else {
+            self.statement()
+        };
+
+        res.or_else(|err| {
+            self.synchronize();
+            Err(err)
+        })
+    }
+    fn var_declaration(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::{Equal, Identifier, Semicolon};
+        let name = self
+            .consume(Identifier, "Expected variable name after var")?
+            .clone();
+        let mut init: Expr = LiteralType::Nil.into();
+        if check!(self.peek(), Equal) {
+            self.advance();
+            init = self.expression()?;
+        };
+        self.consume(Semicolon, "Expected ';' after variable declaration")?;
+        Ok(Stmt::Var(Var::new(name, init)))
+    }
+
+    fn statement(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::{LeftBrace, Print};
+
+        if check!(self.peek(), Print) {
+            self.advance();
+            self.print_statement()
+        } else {
+            if check!(self.peek(), LeftBrace) {
+                self.advance();
+                Ok(Block::new(self.block()?).into())
+            } else {
+                self.expression_statement()
+            }
+        }
+    }
+
+    fn block(&mut self) -> ParseResult<Vec<Stmt>> {
+        use crate::tokens::token_type::TokenType::RightBrace;
+        let mut statements = Vec::new();
+        while !check!(self.peek(), RightBrace) && !self.is_at_end() {
+            statements.push(self.declaration()?);
+        }
+        self.consume(RightBrace, "Expected '}' after initial block")?;
+        Ok(statements)
     }
 
     #[inline]
-    fn expression(&mut self) -> ParseResult<Expr> {
-        self.equality()
+    fn print_statement(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::Semicolon;
+
+        let value = self.expression()?;
+        self.consume(Semicolon, "Expected ';' after value")?;
+        Ok(Stmt::Print(Print::new(value)))
     }
 
+    fn expression_statement(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::Semicolon;
+
+        let expr = self.expression()?;
+        self.consume(Semicolon, "Expected ';' after expression")?;
+        Ok(Stmt::Expression(Expression::new(expr)))
+    }
+    #[inline]
+    fn expression(&mut self) -> ParseResult<Expr> {
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> ParseResult<Expr> {
+        use crate::tokens::token_type::TokenType::Equal;
+        let expr = self.equality()?;
+
+        if check!(self.peek(), Equal) {
+            let equals = self.peek().unwrap().clone();
+            self.advance();
+
+            let value = self.assignment()?;
+            return match &expr {
+                Expr::Variable(var) => {
+                    let name = &var.name;
+                    Ok(Assign::new(name.clone(), Box::new(value)).into())
+                }
+                _ => Err(ParseError::new(
+                    "Invalid l value for assignment",
+                    (&equals).line,
+                )),
+            };
+        }
+        Ok(expr)
+    }
     fn equality(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{BangEqual, EqualEqual};
         let mut expr = self.comparision()?;
@@ -73,6 +174,7 @@ impl<'a> Parser<'a> {
     fn factor(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{Slash, Star};
         let mut expr = self.unary()?;
+
         while check!(self.peek(), Slash | Star) {
             let operator = (*self.advance()).clone();
             let right = self.unary()?;
@@ -94,17 +196,27 @@ impl<'a> Parser<'a> {
     }
     fn primary(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{
-            False, LeftParen, Nil, Number, RightParen, String, True,
+            False, Identifier, LeftParen, Nil, Number, RightParen, Semicolon, String, True,
         };
         Ok(match self.advance().ty {
-            False => Expr::Literal(Literal::new(LiteralType::False)),
-            True => Expr::Literal(Literal::new(LiteralType::True)),
-            Nil => Expr::Literal(Literal::new(LiteralType::Nil)),
-            Number | String => Expr::Literal(Literal::new(self.previous().literal.clone())),
+            False => LiteralType::False.into(),
+            True => LiteralType::True.into(),
+            Nil => LiteralType::Nil.into(),
+            Number | String => self.previous().literal.clone().into(),
+            Identifier => Expr::Variable(Variable::new(self.previous().clone())),
             LeftParen => {
                 let expr = self.expression()?;
                 self.consume(RightParen, "Expected ')' after expression")?;
-                Expr::Grouping(Grouping::new(Box::new(expr)))
+                Grouping::new(Box::new(expr)).into()
+            }
+            Semicolon => {
+                // found a semicolon
+                // go back so we can consume it
+                // this is likely an empty statement
+                // this allows us to not crash when we get something like
+                // print 1;;;
+                self.current -= 1;
+                LiteralType::None.into()
             }
             _ => {
                 self.current -= 1; // did not match anything, backtrack
@@ -137,8 +249,8 @@ impl<'a> Parser<'a> {
     #[inline]
     fn error<T>(&mut self, t: &Token, err: &str) -> ParseResult<T> {
         Err(match t.ty {
-            TokenType::EOF => ParseError::new(&format!(" at the end {err}"), t.line),
-            _ => ParseError::new(&format!(" at '{}' {}", t.lexeme, err), t.line),
+            TokenType::EOF => ParseError::new(&format!("at the end: {err}"), t.line),
+            _ => ParseError::new(&format!("at '{}': {}", t.lexeme, err), t.line),
         })
     }
     #[inline]
