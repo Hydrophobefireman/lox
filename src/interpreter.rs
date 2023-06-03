@@ -1,5 +1,7 @@
+use std::{cell::RefCell, rc::Rc};
+
 use crate::{
-    environment::Environment,
+    environment::{EnclosingEnv, Environment},
     errors::{RuntimeError, RuntimeResult},
     syntax::{
         expr::{self, Binary, Expr, Grouping, Literal, Unary},
@@ -12,7 +14,7 @@ use crate::{
 };
 
 pub struct Interpreter {
-    env: Environment,
+    env: EnclosingEnv,
 }
 
 impl Interpreter {
@@ -44,7 +46,7 @@ impl Interpreter {
     #[inline]
     pub fn new() -> Self {
         Self {
-            env: Environment::new(None),
+            env: Rc::new(RefCell::new(Environment::new(None))),
         }
     }
     #[inline]
@@ -58,6 +60,23 @@ impl Interpreter {
             | [LiteralType::None, LiteralType::None] => true,
             _ => false,
         }
+    }
+
+    pub fn execute_block(&mut self, statements: Vec<Stmt>, env: Environment) -> RuntimeResult<()> {
+        let previous = Rc::clone(&self.env);
+
+        self.env = Rc::new(RefCell::new(env));
+        for stmt in statements {
+            match self.execute(stmt) {
+                Err(e) => {
+                    self.env = Rc::clone(&previous);
+                    Err(e)?
+                }
+                _ => (),
+            };
+        }
+        self.env = previous;
+        Ok(())
     }
 }
 
@@ -140,11 +159,11 @@ impl expr::Visitor<RuntimeResult<LiteralType>> for Interpreter {
     }
 
     fn Variable(&mut self, e: expr::Variable) -> RuntimeResult<LiteralType> {
-        Ok(self.env.get(&e.name)?.clone())
+        Ok(self.env.borrow().get(&e.name)?.clone())
     }
     fn Assign(&mut self, e: expr::Assign) -> RuntimeResult<LiteralType> {
         let val = self.evaluate(*e.value)?;
-        self.env.assign(e.name, val.clone())?;
+        self.env.borrow_mut().assign(e.name, val.clone())?;
         Ok(val)
     }
 }
@@ -163,11 +182,11 @@ impl stmt::Visitor<RuntimeResult<LiteralType>> for Interpreter {
 
     fn Var(&mut self, e: stmt::Var) -> RuntimeResult<LiteralType> {
         let value = self.evaluate(e.initializer)?;
-        self.env.define(e.name.lexeme, value);
+        self.env.borrow_mut().define(e.name.lexeme, value);
         Ok(LiteralType::None)
     }
     fn Block(&mut self, e: stmt::Block) -> RuntimeResult<LiteralType> {
-        self.execute_block(e.statements, Environment::new(Some()))?;
+        self.execute_block(e.statements, Environment::new(Some(Rc::clone(&self.env))))?;
         Ok(LiteralType::Nil)
     }
 }

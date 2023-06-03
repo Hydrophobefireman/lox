@@ -5,15 +5,25 @@ use crate::{
     tokens::token::{LiteralType, Token},
 };
 
-type EnclosingEnv = Option<Rc<RefCell<Environment>>>;
+pub type EnclosingEnv = Rc<RefCell<Environment>>;
+#[derive(Debug)]
 pub struct Environment {
     values: HashMap<String, LiteralType>,
-    enclosing: EnclosingEnv,
+    enclosing: Option<EnclosingEnv>,
+}
+
+impl Default for Environment {
+    fn default() -> Self {
+        Self {
+            values: HashMap::new(),
+            enclosing: None,
+        }
+    }
 }
 
 impl Environment {
     #[inline]
-    pub fn new(enclosing: EnclosingEnv) -> Self {
+    pub fn new(enclosing: Option<EnclosingEnv>) -> Self {
         Self {
             values: Default::default(),
             enclosing,
@@ -24,15 +34,14 @@ impl Environment {
         self.values.insert(name.into(), value);
     }
 
-    #[inline]
     pub fn assign(&mut self, name: Token, value: LiteralType) -> RuntimeResult<()> {
         if self.values.contains_key(&name.lexeme) {
             self.define(name.lexeme, value);
             Ok(())
         } else {
             match &mut self.enclosing {
-                Some(outer_scope) => {
-                    outer_scope.borrow().assign(name, value)?;
+                Some(outer) => {
+                    outer.borrow_mut().assign(name, value)?;
                     Ok(())
                 }
                 None => Err(RuntimeError::new(
@@ -43,18 +52,22 @@ impl Environment {
         }
     }
 
-    #[inline]
-    pub fn get(&self, name: &Token) -> RuntimeResult<&LiteralType> {
-        let res = self.values.get(&name.lexeme);
-        match res {
-            Some(x) => Ok(x),
-            None => match &self.enclosing {
-                Some(outer_scope) => outer_scope.borrow().get(name),
+    pub fn get(&self, name: &Token) -> RuntimeResult<LiteralType> {
+        if self.values.contains_key(&name.lexeme) {
+            self.values
+                .get(&name.lexeme)
+                .ok_or_else(|| {
+                    RuntimeError::new(&format!("Undefined variable '{}'", name.lexeme), name.line)
+                })
+                .map(|f| f.clone())
+        } else {
+            match &self.enclosing {
+                Some(outer) => outer.borrow().get(name),
                 None => Err(RuntimeError::new(
-                    &format!("Undefined variable {}", name.lexeme),
+                    &format!("Undefined variable '{}'", name.lexeme),
                     name.line,
-                ))?,
-            },
+                )),
+            }
         }
     }
 }
