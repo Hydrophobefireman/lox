@@ -1,8 +1,8 @@
 use crate::{
     errors::{ParseError, ParseResult},
     syntax::{
-        expr::{Assign, Binary, Expr, Grouping, Unary, Variable},
-        stmt::{Block, Expression, Print, Stmt, Var},
+        expr::{Assign, Binary, Expr, Grouping, Logical, Unary, Variable},
+        stmt::{Block, Expression, If, Print, Stmt, Var, While},
     },
     tokens::{
         token::{LiteralType, Token},
@@ -68,18 +68,21 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{LeftBrace, Print};
-
-        if check!(self.peek(), Print) {
+        use crate::tokens::token_type::TokenType::{If, LeftBrace, Print, While};
+        if check!(self.peek(), If) {
+            self.advance();
+            self.if_statement()
+        } else if check!(self.peek(), Print) {
             self.advance();
             self.print_statement()
+        } else if check!(self.peek(), While) {
+            self.advance();
+            self.while_statement()
+        } else if check!(self.peek(), LeftBrace) {
+            self.advance();
+            Ok(Block::new(self.block()?).into())
         } else {
-            if check!(self.peek(), LeftBrace) {
-                self.advance();
-                Ok(Block::new(self.block()?).into())
-            } else {
-                self.expression_statement()
-            }
+            self.expression_statement()
         }
     }
 
@@ -92,14 +95,40 @@ impl<'a> Parser<'a> {
         self.consume(RightBrace, "Expected '}' after initial block")?;
         Ok(statements)
     }
+    fn if_statement(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::{Else, LeftParen, RightParen};
 
+        self.consume(LeftParen, "Expected '(' after 'if'.")?;
+        let cond = self.expression()?;
+        self.consume(RightParen, "Expected ')' after 'if condition'.")?;
+
+        let then_branch = self.statement()?;
+        let mut else_branch = None;
+        if check!(self.peek(), Else) {
+            self.advance();
+            else_branch = Some(Box::new(self.statement()?));
+        };
+
+        return Ok(If::new(cond, Box::new(then_branch), else_branch).into());
+    }
+
+    #[inline]
+    fn while_statement(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::{LeftParen, RightParen};
+
+        self.consume(LeftParen, "Expected '(' after 'while'.")?;
+        let cond = self.expression()?;
+        self.consume(RightParen, "Expected ')' after 'while condition'.")?;
+        let body = self.statement()?;
+        Ok(While::new(cond, Box::new(body)).into())
+    }
     #[inline]
     fn print_statement(&mut self) -> ParseResult<Stmt> {
         use crate::tokens::token_type::TokenType::Semicolon;
 
         let value = self.expression()?;
         self.consume(Semicolon, "Expected ';' after value")?;
-        Ok(Stmt::Print(Print::new(value)))
+        Ok(Print::new(value).into())
     }
 
     fn expression_statement(&mut self) -> ParseResult<Stmt> {
@@ -107,16 +136,40 @@ impl<'a> Parser<'a> {
 
         let expr = self.expression()?;
         self.consume(Semicolon, "Expected ';' after expression")?;
-        Ok(Stmt::Expression(Expression::new(expr)))
+        Ok(Expression::new(expr).into())
     }
     #[inline]
     fn expression(&mut self) -> ParseResult<Expr> {
         self.assignment()
     }
 
+    fn and(&mut self) -> ParseResult<Expr> {
+        use crate::tokens::token_type::TokenType::And;
+
+        let mut expr = self.equality()?;
+
+        while check!(self.peek(), And) {
+            let operator = self.advance().clone();
+            let right = self.equality()?;
+            expr = Logical::new(Box::new(expr), operator, Box::new(right)).into()
+        }
+        Ok(expr)
+    }
+    fn or(&mut self) -> ParseResult<Expr> {
+        use crate::tokens::token_type::TokenType::Or;
+
+        let mut expr = self.and()?;
+
+        while check!(self.peek(), Or) {
+            let operator = self.advance().clone();
+            let right = self.and()?;
+            expr = Logical::new(Box::new(expr), operator, Box::new(right)).into();
+        }
+        Ok(expr)
+    }
     fn assignment(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::Equal;
-        let expr = self.equality()?;
+        let expr = self.or()?;
 
         if check!(self.peek(), Equal) {
             let equals = self.peek().unwrap().clone();
@@ -216,7 +269,7 @@ impl<'a> Parser<'a> {
                 // this allows us to not crash when we get something like
                 // print 1;;;
                 self.current -= 1;
-                LiteralType::None.into()
+                LiteralType::InternalNoValue.into()
             }
             _ => {
                 self.current -= 1; // did not match anything, backtrack

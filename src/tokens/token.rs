@@ -9,7 +9,7 @@ pub enum LiteralType {
     True,
     False,
     Nil,
-    None,
+    InternalNoValue,
 }
 
 impl Display for LiteralType {
@@ -20,7 +20,7 @@ impl Display for LiteralType {
             LiteralType::True => write!(f, "true"),
             LiteralType::False => write!(f, "false"),
             LiteralType::Nil => write!(f, "nil"),
-            LiteralType::None => write!(f, "(?unresolved?)"),
+            LiteralType::InternalNoValue => write!(f, "(?unresolved?)"),
         }
     }
 }
@@ -36,7 +36,7 @@ impl From<bool> for LiteralType {
 
 impl Default for LiteralType {
     fn default() -> Self {
-        LiteralType::None
+        LiteralType::InternalNoValue
     }
 }
 

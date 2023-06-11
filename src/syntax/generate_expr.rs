@@ -9,7 +9,7 @@ macro_rules! gen_struct {
             )*
         }
 
-        $(#[derive(Debug)]
+        $(#[derive(Debug, Clone)]
         pub struct $variant {
              $(pub $field: $ty),*
         }
@@ -40,7 +40,7 @@ macro_rules! gen_struct {
         )*
 
         #[allow(dead_code)]
-        #[derive(Debug)]
+        #[derive(Debug,Clone)]
         pub enum $st_name {
 
             $(

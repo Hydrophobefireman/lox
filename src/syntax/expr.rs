@@ -7,6 +7,7 @@ gen_struct!(Expr,
     Binary, left: Box<Expr>, operator: Token, right: Box<Expr>;
     Grouping, expression: Box<Expr>;
     Literal, value: LiteralType;
+    Logical, left: Box<Expr>, operator: Token, right: Box<Expr>;
     Unary, operator: Token, right: Box<Expr>;
     Variable, name: Token;
     Assign, name: Token, value: Box<Expr>
@@ -16,7 +17,7 @@ impl Default for Expr {
     #[inline]
     fn default() -> Self {
         Expr::Literal(Literal {
-            value: LiteralType::None,
+            value: LiteralType::InternalNoValue,
         })
     }
 }

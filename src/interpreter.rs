@@ -18,13 +18,12 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    #[inline]
     fn evaluate(&mut self, e: Expr) -> RuntimeResult<LiteralType> {
         e.accept(self)
     }
 
     #[inline]
-    fn is_truthy(&mut self, e: LiteralType) -> bool {
+    fn is_truthy(&self, e: &LiteralType) -> bool {
         !matches!(e, LiteralType::False)
     }
     #[inline]
@@ -49,7 +48,6 @@ impl Interpreter {
             env: Rc::new(RefCell::new(Environment::new(None))),
         }
     }
-    #[inline]
     fn is_equal(&self, left: &LiteralType, right: &LiteralType) -> bool {
         match [left, right] {
             [LiteralType::String(l), LiteralType::String(r)] => *l == *r,
@@ -57,7 +55,7 @@ impl Interpreter {
             [LiteralType::Nil, LiteralType::Nil]
             | [LiteralType::True, LiteralType::True]
             | [LiteralType::False, LiteralType::False]
-            | [LiteralType::None, LiteralType::None] => true,
+            | [LiteralType::InternalNoValue, LiteralType::InternalNoValue] => true,
             _ => false,
         }
     }
@@ -153,7 +151,7 @@ impl expr::Visitor<RuntimeResult<LiteralType>> for Interpreter {
                     e.operator.line,
                 )),
             },
-            TokenType::Bang => Ok(LiteralType::from(!self.is_truthy(right))),
+            TokenType::Bang => Ok(LiteralType::from(!self.is_truthy(&right))),
             _ => panic!("?"),
         }
     }
@@ -166,6 +164,24 @@ impl expr::Visitor<RuntimeResult<LiteralType>> for Interpreter {
         self.env.borrow_mut().assign(e.name, val.clone())?;
         Ok(val)
     }
+
+    fn Logical(&mut self, e: expr::Logical) -> RuntimeResult<LiteralType> {
+        let left = self.evaluate(*e.left)?;
+        match e.operator.ty {
+            TokenType::Or => {
+                if self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            TokenType::And => {
+                if !self.is_truthy(&left) {
+                    return Ok(left);
+                }
+            }
+            _ => unreachable!(),
+        }
+        self.evaluate(*e.right)
+    }
 }
 
 impl stmt::Visitor<RuntimeResult<LiteralType>> for Interpreter {
@@ -177,16 +193,38 @@ impl stmt::Visitor<RuntimeResult<LiteralType>> for Interpreter {
         let ev = self.evaluate(e.expression)?;
         let value = self.stringify(&ev);
         println!("{value}");
-        Ok(LiteralType::None)
+        Ok(LiteralType::InternalNoValue)
     }
 
     fn Var(&mut self, e: stmt::Var) -> RuntimeResult<LiteralType> {
         let value = self.evaluate(e.initializer)?;
         self.env.borrow_mut().define(e.name.lexeme, value);
-        Ok(LiteralType::None)
+        Ok(LiteralType::InternalNoValue)
     }
     fn Block(&mut self, e: stmt::Block) -> RuntimeResult<LiteralType> {
         self.execute_block(e.statements, Environment::new(Some(Rc::clone(&self.env))))?;
         Ok(LiteralType::Nil)
+    }
+    fn If(&mut self, e: stmt::If) -> RuntimeResult<LiteralType> {
+        let val = self.evaluate(e.cond)?;
+        if self.is_truthy(&val) {
+            self.execute(*e.then_branch)?;
+        } else {
+            if let Some(val) = e.else_branch {
+                self.execute(*val)?;
+            };
+        }
+        Ok(LiteralType::InternalNoValue)
+    }
+
+    fn While(&mut self, e: stmt::While) -> RuntimeResult<LiteralType> {
+        loop {
+            let value = self.evaluate(e.cond.clone())?;
+            if !self.is_truthy(&value) {
+                break;
+            }
+            self.execute(*e.body.clone())?;
+        }
+        Ok(LiteralType::InternalNoValue)
     }
 }

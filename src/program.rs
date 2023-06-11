@@ -24,7 +24,7 @@ impl Program {
 impl Program {
     fn run(&mut self, line: &str) -> LiteralType {
         if line.is_empty() {
-            return LiteralType::None;
+            return LiteralType::InternalNoValue;
         }
         let scanner = Scanner::new(line);
         let tokens = scanner.scan_tokens();
@@ -48,14 +48,14 @@ impl Program {
                 match self.interpreter.interpret(stmts) {
                     Err(r) => {
                         self.runtime_error(0, &r.message);
-                        LiteralType::None
+                        LiteralType::InternalNoValue
                     }
                     Ok(v) => v,
                 }
             }
             Err(err) => {
                 self.error(err.line, &err.message);
-                LiteralType::None
+                LiteralType::InternalNoValue
             }
         }
     }
@@ -85,7 +85,7 @@ impl Program {
                 break Ok(());
             }
             let res = self.run(line.trim());
-            if !matches!(res, LiteralType::None) {
+            if !matches!(res, LiteralType::InternalNoValue) {
                 println!("{}", res.to_string());
             }
             io::stdout().flush()?;

@@ -30,7 +30,7 @@ impl<'a> Scanner<'a> {
             self.scan_token()?;
         }
         self.tokens
-            .push(Token::new(EOF, "".to_owned(), LiteralType::None, self.line));
+            .push(Token::new(EOF, "".to_owned(), LiteralType::InternalNoValue, self.line));
         Ok(self.tokens)
     }
     #[inline]
@@ -52,23 +52,23 @@ impl<'a> Scanner<'a> {
     fn scan_token(&mut self) -> ScanResult<()> {
         let c = self.advance();
         match c {
-            '(' => self.add_token(LeftParen, LiteralType::None),
-            ')' => self.add_token(RightParen, LiteralType::None),
-            '{' => self.add_token(LeftBrace, LiteralType::None),
-            '}' => self.add_token(RightBrace, LiteralType::None),
-            ',' => self.add_token(Comma, LiteralType::None),
-            '.' => self.add_token(Dot, LiteralType::None),
-            '-' => self.add_token(Minus, LiteralType::None),
-            '+' => self.add_token(Plus, LiteralType::None),
-            ';' => self.add_token(Semicolon, LiteralType::None),
-            '*' => self.add_token(Star, LiteralType::None),
+            '(' => self.add_token(LeftParen, LiteralType::InternalNoValue),
+            ')' => self.add_token(RightParen, LiteralType::InternalNoValue),
+            '{' => self.add_token(LeftBrace, LiteralType::InternalNoValue),
+            '}' => self.add_token(RightBrace, LiteralType::InternalNoValue),
+            ',' => self.add_token(Comma, LiteralType::InternalNoValue),
+            '.' => self.add_token(Dot, LiteralType::InternalNoValue),
+            '-' => self.add_token(Minus, LiteralType::InternalNoValue),
+            '+' => self.add_token(Plus, LiteralType::InternalNoValue),
+            ';' => self.add_token(Semicolon, LiteralType::InternalNoValue),
+            '*' => self.add_token(Star, LiteralType::InternalNoValue),
             '!' => {
                 let a = if self.consume_if('=') {
                     BangEqual
                 } else {
                     Bang
                 };
-                self.add_token(a, LiteralType::None)
+                self.add_token(a, LiteralType::InternalNoValue)
             }
             '=' => {
                 let a = if self.consume_if('=') {
@@ -76,7 +76,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Equal
                 };
-                self.add_token(a, LiteralType::None)
+                self.add_token(a, LiteralType::InternalNoValue)
             }
             '<' => {
                 let a = if self.consume_if('=') {
@@ -84,7 +84,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Less
                 };
-                self.add_token(a, LiteralType::None)
+                self.add_token(a, LiteralType::InternalNoValue)
             }
             '>' => {
                 let a = if self.consume_if('=') {
@@ -92,7 +92,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Greater
                 };
-                self.add_token(a, LiteralType::None)
+                self.add_token(a, LiteralType::InternalNoValue)
             }
             '/' => {
                 if self.consume_if('/') {
@@ -103,7 +103,7 @@ impl<'a> Scanner<'a> {
                         self.advance();
                     }
                 } else {
-                    self.add_token(Slash, LiteralType::None);
+                    self.add_token(Slash, LiteralType::InternalNoValue);
                 }
             }
             '0'..='9' => self.handle_number(),
@@ -168,7 +168,7 @@ impl<'a> Scanner<'a> {
             "while" => While,
             _ => Identifier,
         };
-        self.add_token(tt, LiteralType::None);
+        self.add_token(tt, LiteralType::InternalNoValue);
     }
     fn handle_string(&mut self) -> ScanResult<()> {
         while self.peek().is_some() && self.peek().unwrap() != '"' {

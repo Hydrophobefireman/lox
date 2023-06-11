@@ -10,7 +10,7 @@ var c = "global c";
     print b;
     print c;
     var 
-    c = "c = " + a;
+    c = "c = " + a+c;
     print c;
   }
   print a;
