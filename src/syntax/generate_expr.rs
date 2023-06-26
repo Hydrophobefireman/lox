@@ -5,7 +5,7 @@ macro_rules! gen_struct {
         pub trait Visitor<R> {
             $(
                 #[allow(non_snake_case)]
-                fn $variant(&mut self, e: $variant) -> R;
+                fn $variant(&mut self, e: &$variant) -> R;
             )*
         }
 
@@ -23,7 +23,7 @@ macro_rules! gen_struct {
             }
 
             #[allow(dead_code)]
-            pub fn accept<T:Visitor<R>,R>(self,x:&mut T)->R{
+            pub fn accept<T:Visitor<R>,R>(&self,x:&mut T)->R{
                 x.$variant(self)
             }
         })*
@@ -49,7 +49,7 @@ macro_rules! gen_struct {
         }
         impl $st_name {
             #[allow(dead_code)]
-            pub fn accept<T: Visitor<R>, R>(self, x: &mut T) -> R {
+            pub fn accept<T: Visitor<R>, R>(&self, x: &mut T) -> R {
                 let ax = self;
                 match ax {
                     $($st_name::$variant(v) => v.accept(x),)*

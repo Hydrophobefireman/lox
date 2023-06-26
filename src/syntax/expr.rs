@@ -1,12 +1,13 @@
 use crate::{
     gen_struct,
-    tokens::token::{LiteralType, Token},
+    tokens::token::{LoxType, Token},
 };
 
 gen_struct!(Expr,
     Binary, left: Box<Expr>, operator: Token, right: Box<Expr>;
+    Call, callee: Box<Expr>, paren: Token,args: Vec<Expr>;
     Grouping, expression: Box<Expr>;
-    Literal, value: LiteralType;
+    Literal, value: LoxType;
     Logical, left: Box<Expr>, operator: Token, right: Box<Expr>;
     Unary, operator: Token, right: Box<Expr>;
     Variable, name: Token;
@@ -17,20 +18,20 @@ impl Default for Expr {
     #[inline]
     fn default() -> Self {
         Expr::Literal(Literal {
-            value: LiteralType::InternalNoValue,
+            value: LoxType::InternalNoValue,
         })
     }
 }
-impl From<LiteralType> for Literal {
+impl From<LoxType> for Literal {
     #[inline]
-    fn from(value: LiteralType) -> Self {
+    fn from(value: LoxType) -> Self {
         Self::new(value)
     }
 }
 
-impl From<LiteralType> for Expr {
+impl From<LoxType> for Expr {
     #[inline]
-    fn from(value: LiteralType) -> Self {
+    fn from(value: LoxType) -> Self {
         let l: Literal = value.into();
         l.into()
     }

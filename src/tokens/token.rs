@@ -1,48 +1,80 @@
 use std::fmt::Display;
 
-use crate::{errors::RuntimeError, tokens::token_type::TokenType};
+use crate::{
+    errors::{RuntimeError, RuntimeResult},
+    interpreter::Interpreter,
+    tokens::token_type::TokenType,
+};
+pub trait LoxCallable {
+    fn kind(&self) -> LoxCollableType;
+    fn name(&self) -> String;
+    fn arity(&self) -> usize;
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<LoxType>) -> RuntimeResult<LoxType>;
+    fn clone_box(&self) -> Box<dyn LoxCallable>;
+}
+impl std::fmt::Debug for dyn LoxCallable {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?} {}()", self.kind(), self.name())
+    }
+}
 
+#[derive(Debug)]
+pub enum LoxCollableType {
+    Function,
+    Class,
+    NativeFunction,
+}
+
+impl Clone for Box<dyn LoxCallable> {
+    fn clone(&self) -> Self {
+        self.clone_box()
+    }
+}
 #[derive(Debug, Clone)]
-pub enum LiteralType {
+pub enum LoxType {
     String(String),
     Float(f64),
     True,
     False,
     Nil,
+    Callable(Box<dyn LoxCallable>),
     InternalNoValue,
 }
 
-impl Display for LiteralType {
+impl Display for LoxType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LiteralType::String(s) => write!(f, "{s}"),
-            LiteralType::Float(n) => write!(f, "{n}"),
-            LiteralType::True => write!(f, "true"),
-            LiteralType::False => write!(f, "false"),
-            LiteralType::Nil => write!(f, "nil"),
-            LiteralType::InternalNoValue => write!(f, "(?unresolved?)"),
+            LoxType::String(s) => write!(f, "{s}"),
+            LoxType::Float(n) => write!(f, "{n}"),
+            LoxType::True => write!(f, "true"),
+            LoxType::False => write!(f, "false"),
+            LoxType::Nil => write!(f, "nil"),
+            LoxType::InternalNoValue => write!(f, "(?unresolved?)"),
+            LoxType::Callable(c) => write!(f, "{:?} {}", c.kind(), &c.name()),
         }
     }
 }
-impl From<bool> for LiteralType {
+impl From<bool> for LoxType {
     fn from(value: bool) -> Self {
-        return if value {
-            LiteralType::True
-        } else {
-            LiteralType::False
-        };
+        return if value { LoxType::True } else { LoxType::False };
     }
 }
 
-impl Default for LiteralType {
+impl From<f64> for LoxType {
+    fn from(value: f64) -> Self {
+        LoxType::Float(value)
+    }
+}
+
+impl Default for LoxType {
     fn default() -> Self {
-        LiteralType::InternalNoValue
+        LoxType::InternalNoValue
     }
 }
 
-pub fn literal_to_float(x: LiteralType) -> Result<f64, RuntimeError> {
+pub fn literal_to_float(x: LoxType) -> Result<f64, RuntimeError> {
     match x {
-        LiteralType::Float(v) => Ok(v),
+        LoxType::Float(v) => Ok(v),
         _ => Err(RuntimeError::new("Cannot convert to float", 0)),
     }
 }
@@ -51,12 +83,12 @@ pub fn literal_to_float(x: LiteralType) -> Result<f64, RuntimeError> {
 pub struct Token {
     pub ty: TokenType,
     pub lexeme: String,
-    pub literal: LiteralType,
+    pub literal: LoxType,
     pub line: usize,
 }
 
 impl Token {
-    pub fn new(ty: TokenType, lexeme: String, literal: LiteralType, line: usize) -> Self {
+    pub fn new(ty: TokenType, lexeme: String, literal: LoxType, line: usize) -> Self {
         Token {
             ty,
             lexeme,

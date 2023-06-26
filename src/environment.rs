@@ -2,13 +2,13 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     errors::{RuntimeError, RuntimeResult},
-    tokens::token::{LiteralType, Token},
+    tokens::token::{LoxType, Token},
 };
 
 pub type EnclosingEnv = Rc<RefCell<Environment>>;
 #[derive(Debug)]
 pub struct Environment {
-    values: HashMap<String, LiteralType>,
+    values: HashMap<String, LoxType>,
     enclosing: Option<EnclosingEnv>,
 }
 
@@ -30,13 +30,13 @@ impl Environment {
         }
     }
     #[inline]
-    pub fn define(&mut self, name: String, value: LiteralType) {
+    pub fn define(&mut self, name: &str, value: LoxType) {
         self.values.insert(name.into(), value);
     }
 
-    pub fn assign(&mut self, name: Token, value: LiteralType) -> RuntimeResult<()> {
+    pub fn assign(&mut self, name: Token, value: LoxType) -> RuntimeResult<()> {
         if self.values.contains_key(&name.lexeme) {
-            self.define(name.lexeme, value);
+            self.define(&name.lexeme, value);
             Ok(())
         } else {
             match &mut self.enclosing {
@@ -52,7 +52,7 @@ impl Environment {
         }
     }
 
-    pub fn get(&self, name: &Token) -> RuntimeResult<LiteralType> {
+    pub fn get(&self, name: &Token) -> RuntimeResult<LoxType> {
         if self.values.contains_key(&name.lexeme) {
             self.values
                 .get(&name.lexeme)

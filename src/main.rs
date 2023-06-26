@@ -5,6 +5,8 @@ mod parser;
 mod program;
 mod scanner;
 mod tokens;
+mod globals;
+mod lox_function;
 use std::{env, io};
 mod environment;
 mod syntax;

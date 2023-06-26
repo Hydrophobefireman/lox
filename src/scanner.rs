@@ -1,5 +1,5 @@
 use crate::errors::{ScanError, ScanResult};
-use crate::tokens::token::{LiteralType, Token};
+use crate::tokens::token::{LoxType, Token};
 use crate::tokens::token_type::TokenType::{self, *};
 
 pub struct Scanner<'a> {
@@ -30,7 +30,7 @@ impl<'a> Scanner<'a> {
             self.scan_token()?;
         }
         self.tokens
-            .push(Token::new(EOF, "".to_owned(), LiteralType::InternalNoValue, self.line));
+            .push(Token::new(EOF, "".to_owned(), LoxType::InternalNoValue, self.line));
         Ok(self.tokens)
     }
     #[inline]
@@ -44,7 +44,7 @@ impl<'a> Scanner<'a> {
         return res as char;
     }
     #[inline]
-    fn add_token(&mut self, t: TokenType, literal: LiteralType) {
+    fn add_token(&mut self, t: TokenType, literal: LoxType) {
         let text = &self.source[self.start..self.current];
         self.tokens
             .push(Token::new(t, text.to_owned(), literal, self.line));
@@ -52,23 +52,23 @@ impl<'a> Scanner<'a> {
     fn scan_token(&mut self) -> ScanResult<()> {
         let c = self.advance();
         match c {
-            '(' => self.add_token(LeftParen, LiteralType::InternalNoValue),
-            ')' => self.add_token(RightParen, LiteralType::InternalNoValue),
-            '{' => self.add_token(LeftBrace, LiteralType::InternalNoValue),
-            '}' => self.add_token(RightBrace, LiteralType::InternalNoValue),
-            ',' => self.add_token(Comma, LiteralType::InternalNoValue),
-            '.' => self.add_token(Dot, LiteralType::InternalNoValue),
-            '-' => self.add_token(Minus, LiteralType::InternalNoValue),
-            '+' => self.add_token(Plus, LiteralType::InternalNoValue),
-            ';' => self.add_token(Semicolon, LiteralType::InternalNoValue),
-            '*' => self.add_token(Star, LiteralType::InternalNoValue),
+            '(' => self.add_token(LeftParen, LoxType::InternalNoValue),
+            ')' => self.add_token(RightParen, LoxType::InternalNoValue),
+            '{' => self.add_token(LeftBrace, LoxType::InternalNoValue),
+            '}' => self.add_token(RightBrace, LoxType::InternalNoValue),
+            ',' => self.add_token(Comma, LoxType::InternalNoValue),
+            '.' => self.add_token(Dot, LoxType::InternalNoValue),
+            '-' => self.add_token(Minus, LoxType::InternalNoValue),
+            '+' => self.add_token(Plus, LoxType::InternalNoValue),
+            ';' => self.add_token(Semicolon, LoxType::InternalNoValue),
+            '*' => self.add_token(Star, LoxType::InternalNoValue),
             '!' => {
                 let a = if self.consume_if('=') {
                     BangEqual
                 } else {
                     Bang
                 };
-                self.add_token(a, LiteralType::InternalNoValue)
+                self.add_token(a, LoxType::InternalNoValue)
             }
             '=' => {
                 let a = if self.consume_if('=') {
@@ -76,7 +76,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Equal
                 };
-                self.add_token(a, LiteralType::InternalNoValue)
+                self.add_token(a, LoxType::InternalNoValue)
             }
             '<' => {
                 let a = if self.consume_if('=') {
@@ -84,7 +84,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Less
                 };
-                self.add_token(a, LiteralType::InternalNoValue)
+                self.add_token(a, LoxType::InternalNoValue)
             }
             '>' => {
                 let a = if self.consume_if('=') {
@@ -92,7 +92,7 @@ impl<'a> Scanner<'a> {
                 } else {
                     Greater
                 };
-                self.add_token(a, LiteralType::InternalNoValue)
+                self.add_token(a, LoxType::InternalNoValue)
             }
             '/' => {
                 if self.consume_if('/') {
@@ -103,7 +103,7 @@ impl<'a> Scanner<'a> {
                         self.advance();
                     }
                 } else {
-                    self.add_token(Slash, LiteralType::InternalNoValue);
+                    self.add_token(Slash, LoxType::InternalNoValue);
                 }
             }
             '0'..='9' => self.handle_number(),
@@ -128,7 +128,7 @@ impl<'a> Scanner<'a> {
 
         self.add_token(
             Number,
-            LiteralType::Float(
+            LoxType::Float(
                 self.source[self.start..self.current]
                     .parse::<f64>()
                     .unwrap(),
@@ -168,7 +168,7 @@ impl<'a> Scanner<'a> {
             "while" => While,
             _ => Identifier,
         };
-        self.add_token(tt, LiteralType::InternalNoValue);
+        self.add_token(tt, LoxType::InternalNoValue);
     }
     fn handle_string(&mut self) -> ScanResult<()> {
         while self.peek().is_some() && self.peek().unwrap() != '"' {
@@ -185,7 +185,7 @@ impl<'a> Scanner<'a> {
 
         let value = self.source[(self.start + 1)..(self.current - 1)].to_owned();
 
-        self.add_token(String, LiteralType::String(value));
+        self.add_token(String, LoxType::String(value));
         Ok(())
         // todo!("add support for escape sequences");
     }

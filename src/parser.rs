@@ -1,11 +1,11 @@
 use crate::{
     errors::{ParseError, ParseResult},
     syntax::{
-        expr::{Assign, Binary, Expr, Grouping, Logical, Unary, Variable},
-        stmt::{Block, Expression, If, Print, Stmt, Var, While},
+        expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Unary, Variable},
+        stmt::{Block, Expression, Function, If, Print, Stmt, Var, While},
     },
     tokens::{
-        token::{LiteralType, Token},
+        token::{LoxCollableType, LoxType, Token},
         token_type::TokenType,
     },
 };
@@ -40,12 +40,18 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::Var;
-        let res = if check!(self.peek(), Var) {
+        use crate::tokens::token_type::TokenType::{Fun, Var};
+
+        let res = if check!(self.peek(), Fun) {
             self.advance();
-            self.var_declaration()
+            self.function(LoxCollableType::Function)
         } else {
-            self.statement()
+            if check!(self.peek(), Var) {
+                self.advance();
+                self.var_declaration()
+            } else {
+                self.statement()
+            }
         };
 
         res.or_else(|err| {
@@ -53,23 +59,59 @@ impl<'a> Parser<'a> {
             Err(err)
         })
     }
+    fn function(&mut self, kind: LoxCollableType) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::{
+            Comma, Identifier, LeftBrace, LeftParen, RightParen,
+        };
+
+        let name = self
+            .consume(Identifier, &format!("Expected {:?} name.", kind))?
+            .clone();
+        self.consume(LeftParen, &format!("Expected '(' after {:?} name.", kind))?;
+        let mut params = Vec::new();
+        if !check!(self.peek(), RightParen) {
+            loop {
+                if params.len() >= 255 {
+                    return Err(ParseError::new(
+                        "Can't have more than 255 params",
+                        self.peek().unwrap().line,
+                    ));
+                }
+
+                params.push(self.consume(Identifier, "Expected paramter name")?.clone());
+                if check!(self.peek(), Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        };
+        self.consume(RightParen, "Expected ')' after parameters")?;
+        self.consume(LeftBrace, &format!("Expected '{{' before {:?} body", kind))?;
+        let body = self.block()?;
+        return Ok(Function::new(name, params, body).into());
+    }
     fn var_declaration(&mut self) -> ParseResult<Stmt> {
         use crate::tokens::token_type::TokenType::{Equal, Identifier, Semicolon};
         let name = self
             .consume(Identifier, "Expected variable name after var")?
             .clone();
-        let mut init: Expr = LiteralType::Nil.into();
+        let mut init: Expr = LoxType::Nil.into();
         if check!(self.peek(), Equal) {
             self.advance();
             init = self.expression()?;
         };
         self.consume(Semicolon, "Expected ';' after variable declaration")?;
-        Ok(Stmt::Var(Var::new(name, init)))
+        Ok(Var::new(name, init).into())
     }
 
     fn statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{If, LeftBrace, Print, While};
-        if check!(self.peek(), If) {
+        use crate::tokens::token_type::TokenType::{For, If, LeftBrace, Print, While};
+
+        if check!(self.peek(), For) {
+            self.advance();
+            self.for_statement()
+        } else if check!(self.peek(), If) {
             self.advance();
             self.if_statement()
         } else if check!(self.peek(), Print) {
@@ -94,6 +136,49 @@ impl<'a> Parser<'a> {
         }
         self.consume(RightBrace, "Expected '}' after initial block")?;
         Ok(statements)
+    }
+
+    fn for_statement(&mut self) -> ParseResult<Stmt> {
+        use crate::tokens::token_type::TokenType::{LeftParen, RightParen, Semicolon, Var};
+
+        self.consume(LeftParen, "Expect '(' after 'for'.")?;
+        let mut initializer = None;
+        if check!(self.peek(), Semicolon) {
+            self.advance();
+        } else if check!(self.peek(), Var) {
+            self.advance();
+            initializer = Some(self.var_declaration()?);
+        } else {
+            initializer = Some(self.expression_statement()?);
+        }
+        let mut condition = None;
+        if !check!(self.peek(), Semicolon) {
+            condition = Some(self.expression()?);
+        }
+
+        self.consume(Semicolon, "Expected ';' after loop condition")?;
+
+        let mut increment = None;
+        if !check!(self.peek(), RightParen) {
+            increment = Some(self.expression()?);
+        }
+        self.consume(RightParen, "Expected ')' after for clauses")?;
+        let mut body = self.statement()?;
+
+        if let Some(increment) = increment {
+            body = Block::new(vec![body, Expression::new(increment).into()]).into();
+        }
+        let condition = match condition {
+            Some(v) => v,
+            None => Literal::new(true.into()).into(),
+        };
+
+        body = While::new(condition, Box::new(body)).into();
+
+        if let Some(initializer) = initializer {
+            body = Block::new(vec![initializer, body]).into();
+        }
+        Ok(body)
     }
     fn if_statement(&mut self) -> ParseResult<Stmt> {
         use crate::tokens::token_type::TokenType::{Else, LeftParen, RightParen};
@@ -244,17 +329,55 @@ impl<'a> Parser<'a> {
             let right = self.unary()?;
             Ok(Expr::Unary(Unary::new(operator, Box::new(right))))
         } else {
-            self.primary()
+            self.call()
         }
+    }
+    fn call(&mut self) -> ParseResult<Expr> {
+        use crate::tokens::token_type::TokenType::LeftParen;
+
+        let mut expr = self.primary()?;
+        loop {
+            if check!(self.peek(), LeftParen) {
+                self.advance();
+                expr = self.handle_call(expr)?;
+            } else {
+                break;
+            }
+        }
+        Ok(expr)
+    }
+    fn handle_call(&mut self, callee: Expr) -> ParseResult<Expr> {
+        use crate::tokens::token_type::TokenType::{Comma, RightParen};
+
+        let mut args = Vec::new();
+
+        if !check!(self.peek(), RightParen) {
+            loop {
+                if args.len() >= 255 {
+                    return Err(ParseError::new(
+                        "Can't have more than 255 arguments",
+                        self.peek().unwrap().line,
+                    ));
+                }
+                args.push(self.expression()?);
+                if check!(self.peek(), Comma) {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+        }
+        let paren = self.consume(RightParen, "Expect ')' after arguments.")?;
+        Ok(Call::new(Box::new(callee), paren.clone(), args).into())
     }
     fn primary(&mut self) -> ParseResult<Expr> {
         use crate::tokens::token_type::TokenType::{
             False, Identifier, LeftParen, Nil, Number, RightParen, Semicolon, String, True,
         };
         Ok(match self.advance().ty {
-            False => LiteralType::False.into(),
-            True => LiteralType::True.into(),
-            Nil => LiteralType::Nil.into(),
+            False => LoxType::False.into(),
+            True => LoxType::True.into(),
+            Nil => LoxType::Nil.into(),
             Number | String => self.previous().literal.clone().into(),
             Identifier => Expr::Variable(Variable::new(self.previous().clone())),
             LeftParen => {
@@ -269,7 +392,7 @@ impl<'a> Parser<'a> {
                 // this allows us to not crash when we get something like
                 // print 1;;;
                 self.current -= 1;
-                LiteralType::InternalNoValue.into()
+                LoxType::InternalNoValue.into()
             }
             _ => {
                 self.current -= 1; // did not match anything, backtrack
@@ -307,6 +430,7 @@ impl<'a> Parser<'a> {
         })
     }
     #[inline]
+    #[must_use = "consume causes parse errors when failed which needs to be reconciled"]
     fn consume(&mut self, x: TokenType, err: &str) -> ParseResult<&Token> {
         if self.peek().unwrap().ty == x {
             Ok(self.advance())

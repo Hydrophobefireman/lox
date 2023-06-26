@@ -5,7 +5,7 @@ use std::process::exit;
 use crate::interpreter::Interpreter;
 use crate::parser::Parser;
 use crate::scanner::Scanner;
-use crate::tokens::token::LiteralType;
+use crate::tokens::token::LoxType;
 
 pub struct Program {
     had_error: bool,
@@ -22,9 +22,9 @@ impl Program {
     }
 }
 impl Program {
-    fn run(&mut self, line: &str) -> LiteralType {
+    fn run(&mut self, line: &str) -> LoxType {
         if line.is_empty() {
-            return LiteralType::InternalNoValue;
+            return LoxType::InternalNoValue;
         }
         let scanner = Scanner::new(line);
         let tokens = scanner.scan_tokens();
@@ -45,17 +45,17 @@ impl Program {
 
                 let stmts: Vec<_> = stmts.into_iter().map(Result::unwrap).collect();
 
-                match self.interpreter.interpret(stmts) {
+                match self.interpreter.interpret(&stmts) {
                     Err(r) => {
                         self.runtime_error(0, &r.message);
-                        LiteralType::InternalNoValue
+                        LoxType::InternalNoValue
                     }
                     Ok(v) => v,
                 }
             }
             Err(err) => {
                 self.error(err.line, &err.message);
-                LiteralType::InternalNoValue
+                LoxType::InternalNoValue
             }
         }
     }
@@ -85,7 +85,7 @@ impl Program {
                 break Ok(());
             }
             let res = self.run(line.trim());
-            if !matches!(res, LiteralType::InternalNoValue) {
+            if !matches!(res, LoxType::InternalNoValue) {
                 println!("{}", res.to_string());
             }
             io::stdout().flush()?;
