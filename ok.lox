@@ -1,22 +1,7 @@
-var a = "global a";
-var b = "global b";
-var c = "global c";
-{
-  var a = "outer a";
-  var b = "outer b";
-  {
-    var a = "inner a";
-    print a;
-    print b;
-    print c;
-    var 
-    c = "c = " + a+c;
-    print c;
-  }
+fun scope(a) {
+  var a = "local";
   print a;
-  print b;
-  print c;
+  var a = "c";
 }
-print a;
-print b;
-print c;
+
+scope("a");

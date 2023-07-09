@@ -50,7 +50,7 @@ impl Display for LoxType {
             LoxType::False => write!(f, "false"),
             LoxType::Nil => write!(f, "nil"),
             LoxType::InternalNoValue => write!(f, "(?unresolved?)"),
-            LoxType::Callable(c) => write!(f, "{:?} {}", c.kind(), &c.name()),
+            LoxType::Callable(c) => write!(f, "[{:?} {}]", c.kind(), &c.name()),
         }
     }
 }

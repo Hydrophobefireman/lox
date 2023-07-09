@@ -2,7 +2,7 @@ use crate::{
     errors::{ParseError, ParseResult},
     syntax::{
         expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Unary, Variable},
-        stmt::{Block, Expression, Function, If, Print, Stmt, Var, While},
+        stmt::{Block, Expression, Function, If, Print, Return, Stmt, Var, While},
     },
     tokens::{
         token::{LoxCollableType, LoxType, Token},
@@ -40,7 +40,7 @@ impl<'a> Parser<'a> {
     }
 
     fn declaration(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{Fun, Var};
+        use TokenType::{Fun, Var};
 
         let res = if check!(self.peek(), Fun) {
             self.advance();
@@ -60,9 +60,7 @@ impl<'a> Parser<'a> {
         })
     }
     fn function(&mut self, kind: LoxCollableType) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{
-            Comma, Identifier, LeftBrace, LeftParen, RightParen,
-        };
+        use TokenType::{Comma, Identifier, LeftBrace, LeftParen, RightParen};
 
         let name = self
             .consume(Identifier, &format!("Expected {:?} name.", kind))?
@@ -92,7 +90,7 @@ impl<'a> Parser<'a> {
         return Ok(Function::new(name, params, body).into());
     }
     fn var_declaration(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{Equal, Identifier, Semicolon};
+        use TokenType::{Equal, Identifier, Semicolon};
         let name = self
             .consume(Identifier, "Expected variable name after var")?
             .clone();
@@ -106,7 +104,7 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{For, If, LeftBrace, Print, While};
+        use TokenType::{For, If, LeftBrace, Print, Return, While};
 
         if check!(self.peek(), For) {
             self.advance();
@@ -117,6 +115,9 @@ impl<'a> Parser<'a> {
         } else if check!(self.peek(), Print) {
             self.advance();
             self.print_statement()
+        } else if check!(self.peek(), Return) {
+            self.advance();
+            self.return_statement()
         } else if check!(self.peek(), While) {
             self.advance();
             self.while_statement()
@@ -129,7 +130,7 @@ impl<'a> Parser<'a> {
     }
 
     fn block(&mut self) -> ParseResult<Vec<Stmt>> {
-        use crate::tokens::token_type::TokenType::RightBrace;
+        use TokenType::RightBrace;
         let mut statements = Vec::new();
         while !check!(self.peek(), RightBrace) && !self.is_at_end() {
             statements.push(self.declaration()?);
@@ -139,7 +140,7 @@ impl<'a> Parser<'a> {
     }
 
     fn for_statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{LeftParen, RightParen, Semicolon, Var};
+        use TokenType::{LeftParen, RightParen, Semicolon, Var};
 
         self.consume(LeftParen, "Expect '(' after 'for'.")?;
         let mut initializer = None;
@@ -181,7 +182,7 @@ impl<'a> Parser<'a> {
         Ok(body)
     }
     fn if_statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{Else, LeftParen, RightParen};
+        use TokenType::{Else, LeftParen, RightParen};
 
         self.consume(LeftParen, "Expected '(' after 'if'.")?;
         let cond = self.expression()?;
@@ -196,10 +197,19 @@ impl<'a> Parser<'a> {
 
         return Ok(If::new(cond, Box::new(then_branch), else_branch).into());
     }
-
+    fn return_statement(&mut self) -> ParseResult<Stmt> {
+        use TokenType::Semicolon;
+        let token = self.previous().clone();
+        let mut value = None;
+        if !check!(self.peek(), Semicolon) {
+            value = Some(self.expression()?);
+        };
+        self.consume(Semicolon, "Expected ';' after return value.")?;
+        return Ok(Return::new(token, value).into());
+    }
     #[inline]
     fn while_statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::{LeftParen, RightParen};
+        use TokenType::{LeftParen, RightParen};
 
         self.consume(LeftParen, "Expected '(' after 'while'.")?;
         let cond = self.expression()?;
@@ -209,7 +219,7 @@ impl<'a> Parser<'a> {
     }
     #[inline]
     fn print_statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::Semicolon;
+        use TokenType::Semicolon;
 
         let value = self.expression()?;
         self.consume(Semicolon, "Expected ';' after value")?;
@@ -217,7 +227,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expression_statement(&mut self) -> ParseResult<Stmt> {
-        use crate::tokens::token_type::TokenType::Semicolon;
+        use TokenType::Semicolon;
 
         let expr = self.expression()?;
         self.consume(Semicolon, "Expected ';' after expression")?;
@@ -229,7 +239,7 @@ impl<'a> Parser<'a> {
     }
 
     fn and(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::And;
+        use TokenType::And;
 
         let mut expr = self.equality()?;
 
@@ -241,7 +251,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
     fn or(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::Or;
+        use TokenType::Or;
 
         let mut expr = self.and()?;
 
@@ -253,7 +263,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
     fn assignment(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::Equal;
+        use TokenType::Equal;
         let expr = self.or()?;
 
         if check!(self.peek(), Equal) {
@@ -275,7 +285,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
     fn equality(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::{BangEqual, EqualEqual};
+        use TokenType::{BangEqual, EqualEqual};
         let mut expr = self.comparision()?;
         while check!(self.peek(), EqualEqual | BangEqual) {
             let operator = (*self.advance()).clone();
@@ -286,7 +296,7 @@ impl<'a> Parser<'a> {
     }
 
     fn comparision(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::{Greater, GreaterEqual, Less, LessEqual};
+        use TokenType::{Greater, GreaterEqual, Less, LessEqual};
 
         let mut expr = self.term()?;
 
@@ -298,7 +308,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
     fn term(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::{Minus, Plus};
+        use TokenType::{Minus, Plus};
         let mut expr = self.factor()?;
 
         while check!(self.peek(), Minus | Plus) {
@@ -310,7 +320,7 @@ impl<'a> Parser<'a> {
     }
 
     fn factor(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::{Slash, Star};
+        use TokenType::{Slash, Star};
         let mut expr = self.unary()?;
 
         while check!(self.peek(), Slash | Star) {
@@ -322,7 +332,7 @@ impl<'a> Parser<'a> {
     }
 
     fn unary(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::{Bang, Minus};
+        use TokenType::{Bang, Minus};
 
         if check!(self.peek(), Bang | Minus) {
             let operator = (*self.advance()).clone();
@@ -333,7 +343,7 @@ impl<'a> Parser<'a> {
         }
     }
     fn call(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::LeftParen;
+        use TokenType::LeftParen;
 
         let mut expr = self.primary()?;
         loop {
@@ -347,7 +357,7 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
     fn handle_call(&mut self, callee: Expr) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::{Comma, RightParen};
+        use TokenType::{Comma, RightParen};
 
         let mut args = Vec::new();
 
@@ -371,7 +381,7 @@ impl<'a> Parser<'a> {
         Ok(Call::new(Box::new(callee), paren.clone(), args).into())
     }
     fn primary(&mut self) -> ParseResult<Expr> {
-        use crate::tokens::token_type::TokenType::{
+        use TokenType::{
             False, Identifier, LeftParen, Nil, Number, RightParen, Semicolon, String, True,
         };
         Ok(match self.advance().ty {
@@ -450,7 +460,7 @@ impl<'a> Parser<'a> {
     }
     #[inline]
     fn is_at_end(&self) -> bool {
-        check!(self.peek(), crate::tokens::token_type::TokenType::EOF)
+        check!(self.peek(), TokenType::EOF)
     }
 
     #[inline]

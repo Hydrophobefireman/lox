@@ -10,6 +10,7 @@ gen_struct!(Stmt,
     Function, name: Token, params: Vec<Token>, body:Vec<Stmt>;
     If, cond: Expr,then_branch:Box<Stmt>, else_branch:Option<Box<Stmt>>;
     Print, expression:Expr;
+    Return, keyword: Token, value: Option<Expr>;
     Var, name: Token, initializer: Expr;
     While, cond: Expr, body: Box<Stmt>;
     Block, statements: Vec<Stmt>

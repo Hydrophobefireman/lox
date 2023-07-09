@@ -6,7 +6,7 @@ use crate::{
 };
 
 pub type EnclosingEnv = Rc<RefCell<Environment>>;
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Environment {
     values: HashMap<String, LoxType>,
     enclosing: Option<EnclosingEnv>,

@@ -1,12 +1,13 @@
 mod ast_printer;
 mod errors;
+mod globals;
 mod interpreter;
+mod lox_function;
 mod parser;
 mod program;
+mod resolver;
 mod scanner;
 mod tokens;
-mod globals;
-mod lox_function;
 use std::{env, io};
 mod environment;
 mod syntax;

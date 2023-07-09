@@ -1,4 +1,4 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
     environment::{EnclosingEnv, Environment},
@@ -17,6 +17,7 @@ use crate::{
 
 pub struct Interpreter {
     env: EnclosingEnv,
+    locals: HashMap<Expr, usize>,
     pub globals: EnclosingEnv,
 }
 
@@ -52,6 +53,7 @@ impl Interpreter {
         Self {
             env: Rc::clone(&globals),
             globals,
+            locals: Default::default(),
         }
     }
     fn is_equal(&self, left: &LoxType, right: &LoxType) -> bool {
@@ -81,6 +83,9 @@ impl Interpreter {
         }
         self.env = previous;
         Ok(())
+    }
+    pub fn resolve(&mut self, e: &Expr, depth: usize) {
+        
     }
 }
 
@@ -252,10 +257,17 @@ impl stmt::Visitor<RuntimeResult<LoxType>> for Interpreter {
         Ok(LoxType::InternalNoValue)
     }
     fn Function(&mut self, e: &stmt::Function) -> RuntimeResult<LoxType> {
-        let function = LoxFunction::new(e.clone());
+        let function = LoxFunction::new(e.clone(), Rc::clone(&self.env));
         self.env
             .borrow_mut()
             .define(&e.name.lexeme, function.into());
         Ok(Default::default())
+    }
+    fn Return(&mut self, e: &stmt::Return) -> RuntimeResult<LoxType> {
+        let value = match &e.value {
+            Some(val) => self.evaluate(val)?,
+            None => LoxType::Nil,
+        };
+        Err(RuntimeError::as_return(value))
     }
 }
