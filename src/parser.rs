@@ -10,8 +10,8 @@ use crate::{
     },
 };
 
-pub struct Parser<'a> {
-    tokens: &'a Vec<Token>,
+pub struct Parser {
+    tokens: Vec<Token>,
     current: usize,
 }
 macro_rules! check {
@@ -23,8 +23,8 @@ macro_rules! check {
     };
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(tokens: &'a Vec<Token>) -> Self {
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Self {
         Parser { current: 0, tokens }
     }
 
@@ -71,7 +71,7 @@ impl<'a> Parser<'a> {
             loop {
                 if params.len() >= 255 {
                     return Err(ParseError::new(
-                        "Can't have more than 255 params",
+                        "Can't have more than 255 params".into(),
                         self.peek().unwrap().line,
                     ));
                 }
@@ -277,7 +277,7 @@ impl<'a> Parser<'a> {
                     Ok(Assign::new(name.clone(), Box::new(value)).into())
                 }
                 _ => Err(ParseError::new(
-                    "Invalid l value for assignment",
+                    "Invalid l value for assignment".into(),
                     (&equals).line,
                 )),
             };
@@ -365,7 +365,7 @@ impl<'a> Parser<'a> {
             loop {
                 if args.len() >= 255 {
                     return Err(ParseError::new(
-                        "Can't have more than 255 arguments",
+                        "Can't have more than 255 arguments".into(),
                         self.peek().unwrap().line,
                     ));
                 }
@@ -435,8 +435,8 @@ impl<'a> Parser<'a> {
     #[inline]
     fn error<T>(&mut self, t: &Token, err: &str) -> ParseResult<T> {
         Err(match t.ty {
-            TokenType::EOF => ParseError::new(&format!("at the end: {err}"), t.line),
-            _ => ParseError::new(&format!("at '{}': {}", t.lexeme, err), t.line),
+            TokenType::EOF => ParseError::new(format!("at the end: {err}"), t.line),
+            _ => ParseError::new(format!("at '{}': {}", t.lexeme, err), t.line),
         })
     }
     #[inline]

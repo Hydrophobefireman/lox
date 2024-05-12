@@ -14,7 +14,7 @@ mod syntax;
 use program::Program;
 
 fn main() -> io::Result<()> {
-    let mut p = Program::new();
+    let p = Program::new();
     match env::args().len() {
         1 => p.repl(),
         2 => p.run_script(env::args().nth(1).unwrap().to_string()),

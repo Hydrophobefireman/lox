@@ -26,15 +26,14 @@ impl Interpreter {
         e.accept(self)
     }
 
-    #[inline]
     fn is_truthy(&self, e: &LoxType) -> bool {
         !matches!(e, LoxType::False)
     }
-    #[inline]
+
     pub fn stringify(&self, e: &LoxType) -> String {
         e.to_string()
     }
-    #[inline]
+
     pub fn interpret(&mut self, statements: &Vec<Stmt>) -> RuntimeResult<LoxType> {
         let mut result = Default::default();
         for stmt in statements {
@@ -42,11 +41,11 @@ impl Interpreter {
         }
         Ok(result)
     }
-    #[inline]
+
     fn execute(&mut self, stmt: &Stmt) -> RuntimeResult<LoxType> {
         Ok(stmt.accept(self)?)
     }
-    #[inline]
+
     pub fn new() -> Self {
         let globals = Rc::new(RefCell::new(Environment::new(None)));
         globals.borrow_mut().define("clock", (Clock {}).into());
@@ -84,14 +83,11 @@ impl Interpreter {
         self.env = previous;
         Ok(())
     }
-    pub fn resolve(&mut self, e: &Expr, depth: usize) {
-        
-    }
 }
 
 impl expr::Visitor<RuntimeResult<LoxType>> for Interpreter {
     fn Binary(&mut self, e: &Binary) -> RuntimeResult<LoxType> {
-        let left = self.evaluate(&*e.left.clone())?;
+        let left = self.evaluate(&*e.left)?;
         let right = self.evaluate(&*e.right)?;
         match e.operator.ty {
             TokenType::Minus => Ok(LoxType::Float(
@@ -112,7 +108,7 @@ impl expr::Visitor<RuntimeResult<LoxType>> for Interpreter {
 
                 [LoxType::Float(l), LoxType::Float(r)] => Ok(LoxType::Float(l + r)),
                 [a, b] => Err(RuntimeError::new(
-                    &format!(
+                    format!(
                         "Invalid addition. Operands must be 2 strings or 2 numbers. Found: {a}, {b}"
                     ),
                     e.operator.line,
@@ -135,15 +131,13 @@ impl expr::Visitor<RuntimeResult<LoxType>> for Interpreter {
             TokenType::EqualEqual => Ok(LoxType::from(self.is_equal(&left, &right))),
             _ => panic!("?"),
         }
-        .map_err(|err| RuntimeError::new(&err.message, e.operator.line))
+        .map_err(|err| RuntimeError::new(err.message, e.operator.line))
     }
 
-    #[inline]
     fn Grouping(&mut self, e: &Grouping) -> RuntimeResult<LoxType> {
         self.evaluate(&*e.expression)
     }
 
-    #[inline]
     fn Literal(&mut self, e: &Literal) -> RuntimeResult<LoxType> {
         Ok(e.value.clone())
     }
@@ -152,13 +146,13 @@ impl expr::Visitor<RuntimeResult<LoxType>> for Interpreter {
         let right = self.evaluate(&*e.right)?;
         match e.operator.ty {
             TokenType::Plus => Err(RuntimeError::new(
-                "+{value} is not supported",
+                "+{value} is not supported".into(),
                 e.operator.line,
             )),
             TokenType::Minus => match right {
                 LoxType::Float(f) => Ok(LoxType::Float(-f)),
                 _ => Err(RuntimeError::new(
-                    "Cannot perform negation on non number",
+                    "Cannot perform negation on non number".into(),
                     e.operator.line,
                 )),
             },
@@ -202,13 +196,18 @@ impl expr::Visitor<RuntimeResult<LoxType>> for Interpreter {
             LoxType::Callable(f) => {
                 if args.len() != f.arity() {
                     return Err(RuntimeError::new(
-                        &format!("Expected {} args, got {}", f.arity(), args.len()),
+                        format!("Expected {} args, got {}", f.arity(), args.len()),
                         e.paren.line,
                     ));
                 }
                 f.call(self, args)
             }
-            _ => return Err(RuntimeError::new("Cannot call uncallable", e.paren.line)),
+            _ => {
+                return Err(RuntimeError::new(
+                    "Cannot call uncallable".into(),
+                    e.paren.line,
+                ))
+            }
         }
     }
 }

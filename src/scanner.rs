@@ -1,17 +1,17 @@
 use crate::errors::{ScanError, ScanResult};
 use crate::tokens::token::{LoxType, Token};
-use crate::tokens::token_type::TokenType::{self, *};
+use crate::tokens::token_type::TokenType::{self};
 
-pub struct Scanner<'a> {
-    source: &'a str,
+pub struct Scanner {
+    source: String,
     tokens: Vec<Token>,
     start: usize,
     current: usize,
     line: usize,
 }
 
-impl<'a> Scanner<'a> {
-    pub fn new(source: &'a str) -> Scanner<'a> {
+impl Scanner {
+    pub fn new(source: String) -> Scanner {
         Scanner {
             source,
             tokens: Vec::new(),
@@ -29,8 +29,12 @@ impl<'a> Scanner<'a> {
             self.start = self.current;
             self.scan_token()?;
         }
-        self.tokens
-            .push(Token::new(EOF, "".to_owned(), LoxType::InternalNoValue, self.line));
+        self.tokens.push(Token::new(
+            TokenType::EOF,
+            "".to_owned(),
+            LoxType::InternalNoValue,
+            self.line,
+        ));
         Ok(self.tokens)
     }
     #[inline]
@@ -50,6 +54,7 @@ impl<'a> Scanner<'a> {
             .push(Token::new(t, text.to_owned(), literal, self.line));
     }
     fn scan_token(&mut self) -> ScanResult<()> {
+        use TokenType::*;
         let c = self.advance();
         match c {
             '(' => self.add_token(LeftParen, LoxType::InternalNoValue),
@@ -111,11 +116,12 @@ impl<'a> Scanner<'a> {
             '\n' => self.line += 1,
             '"' => self.handle_string()?,
             'a'..='z' | 'A'..='Z' | '_' => self.handle_identifier(),
-            _ => Err(ScanError::new(&format!("Unexpected token: {c}"), self.line))?,
+            _ => Err(ScanError::new(format!("Unexpected token: {c}"), self.line))?,
         };
         Ok(())
     }
     fn handle_number(&mut self) {
+        use TokenType::*;
         while matches!(self.peek(), Some('0'..='9')) {
             self.advance();
         }
@@ -137,6 +143,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn handle_identifier(&mut self) {
+        use TokenType::*;
         loop {
             if let Some(x) = self.peek() {
                 if x.is_alphanumeric() {
@@ -171,6 +178,7 @@ impl<'a> Scanner<'a> {
         self.add_token(tt, LoxType::InternalNoValue);
     }
     fn handle_string(&mut self) -> ScanResult<()> {
+        use TokenType::*;
         while self.peek().is_some() && self.peek().unwrap() != '"' {
             if self.peek().unwrap() == '\n' {
                 self.line += 1;
@@ -179,7 +187,7 @@ impl<'a> Scanner<'a> {
         }
 
         if self.is_at_end() {
-            return Err(ScanError::new("Unterminated string", self.line));
+            return Err(ScanError::new("Unterminated string".into(), self.line));
         }
         self.advance();
 

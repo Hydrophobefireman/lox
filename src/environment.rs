@@ -45,7 +45,7 @@ impl Environment {
                     Ok(())
                 }
                 None => Err(RuntimeError::new(
-                    &format!("Undefined variable '{}'", name.lexeme),
+                    format!("Undefined variable '{}'", name.lexeme),
                     name.line,
                 )),
             }
@@ -57,14 +57,14 @@ impl Environment {
             self.values
                 .get(&name.lexeme)
                 .ok_or_else(|| {
-                    RuntimeError::new(&format!("Undefined variable '{}'", name.lexeme), name.line)
+                    RuntimeError::new(format!("Undefined variable '{}'", name.lexeme), name.line)
                 })
                 .map(|f| f.clone())
         } else {
             match &self.enclosing {
                 Some(outer) => outer.borrow().get(name),
                 None => Err(RuntimeError::new(
-                    &format!("Undefined variable '{}'", name.lexeme),
+                    format!("Undefined variable '{}'", name.lexeme),
                     name.line,
                 )),
             }

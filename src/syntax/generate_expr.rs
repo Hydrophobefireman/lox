@@ -17,9 +17,7 @@ macro_rules! gen_struct {
         impl $variant {
             #[allow(dead_code)]
             pub fn new($($field: $ty),*) -> Self {
-                Self {
-                    $($field),*
-                }
+                Self { $($field),* }
             }
 
             #[allow(dead_code)]

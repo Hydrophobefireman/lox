@@ -15,9 +15,9 @@ macro_rules! err_struct {
             pub interrupt_kind: InterruptKind,
         }
         impl $name {
-            pub fn new(message: &str, line: usize) -> Self {
+            pub fn new(message: String, line: usize) -> Self {
                 Self {
-                    message: message.into(),
+                    message,
                     line,
                     interrupt_kind: InterruptKind::Builtin,
                 }

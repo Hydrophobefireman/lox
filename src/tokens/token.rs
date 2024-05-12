@@ -9,7 +9,8 @@ pub trait LoxCallable {
     fn kind(&self) -> LoxCollableType;
     fn name(&self) -> String;
     fn arity(&self) -> usize;
-    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<LoxType>) -> RuntimeResult<LoxType>;
+    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<LoxType>)
+        -> RuntimeResult<LoxType>;
     fn clone_box(&self) -> Box<dyn LoxCallable>;
 }
 impl std::fmt::Debug for dyn LoxCallable {
@@ -75,7 +76,7 @@ impl Default for LoxType {
 pub fn literal_to_float(x: LoxType) -> Result<f64, RuntimeError> {
     match x {
         LoxType::Float(v) => Ok(v),
-        _ => Err(RuntimeError::new("Cannot convert to float", 0)),
+        _ => Err(RuntimeError::new("Cannot convert to float".into(), 0)),
     }
 }
 

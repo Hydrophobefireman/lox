@@ -29,7 +29,7 @@ impl Resolver {
     fn end_scope(&mut self) {
         self.scopes.pop();
     }
-    fn resolve_statements(&mut self, stmts: &Vec<Stmt>) -> ResolverResult<()> {
+    pub fn resolve_statements(&mut self, stmts: &Vec<Stmt>) -> ResolverResult<()> {
         stmts
             .iter()
             .map(|s| self.resolve_stmt(s))
@@ -82,13 +82,14 @@ impl expr::Visitor<ResolverResult<()>> for Resolver {
             if let Some(val) = el.get(&e.name.lexeme) {
                 if !val {
                     return Err(ResolverError::new(
-                        "Can't read local variable in its own initializer",
+                        "Can't read local variable in its own initializer".into(),
                         e.name.line,
                     ));
                 }
             }
         }
-        self.resolve_local(&(e.clone().into()), &e.name);
+
+        self.resolve_local(&e.clone().into(), &e.name);
         Ok(())
     }
     fn Assign(&mut self, e: &expr::Assign) -> ResolverResult<()> {
