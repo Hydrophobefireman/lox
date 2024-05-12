@@ -1,4 +1,4 @@
-use crate::tokens::token::LoxType;
+use crate::{interpreter::Interpreter, resolver::Resolver, tokens::token::LoxType};
 
 #[derive(Debug)]
 pub enum InterruptKind {
@@ -33,7 +33,24 @@ err_struct!(ScanError, ScanResult);
 
 err_struct!(ParseError, ParseResult);
 
-err_struct!(ResolverError, ResolverResult);
+#[derive(Debug)]
+pub struct ResolverError {
+    pub message: String,
+    pub line: usize,
+    pub interrupt_kind: InterruptKind,
+    pub interpreter: Interpreter,
+}
+impl ResolverError {
+    pub fn new(message: String, line: usize, i: Interpreter) -> Self {
+        Self {
+            message,
+            line,
+            interrupt_kind: InterruptKind::Builtin,
+            interpreter: i,
+        }
+    }
+}
+pub type ResolverResult<T> = Result<(T, Resolver), ResolverError>;
 
 impl RuntimeError {
     pub fn as_return(value: LoxType) -> Self {

@@ -28,7 +28,6 @@ impl Parser {
         Parser { current: 0, tokens }
     }
 
-    #[inline]
     pub fn parse(&mut self) -> Vec<ParseResult<Stmt>> {
         let mut res = Vec::<ParseResult<Stmt>>::new();
 
@@ -171,7 +170,7 @@ impl Parser {
         }
         let condition = match condition {
             Some(v) => v,
-            None => Literal::new(true.into()).into(),
+            None => Literal::new(true.into(), None).into(),
         };
 
         body = While::new(condition, Box::new(body)).into();
@@ -207,7 +206,7 @@ impl Parser {
         self.consume(Semicolon, "Expected ';' after return value.")?;
         return Ok(Return::new(token, value).into());
     }
-    #[inline]
+
     fn while_statement(&mut self) -> ParseResult<Stmt> {
         use TokenType::{LeftParen, RightParen};
 
@@ -217,7 +216,7 @@ impl Parser {
         let body = self.statement()?;
         Ok(While::new(cond, Box::new(body)).into())
     }
-    #[inline]
+
     fn print_statement(&mut self) -> ParseResult<Stmt> {
         use TokenType::Semicolon;
 
@@ -233,7 +232,7 @@ impl Parser {
         self.consume(Semicolon, "Expected ';' after expression")?;
         Ok(Expression::new(expr).into())
     }
-    #[inline]
+
     fn expression(&mut self) -> ParseResult<Expr> {
         self.assignment()
     }
@@ -246,7 +245,7 @@ impl Parser {
         while check!(self.peek(), And) {
             let operator = self.advance().clone();
             let right = self.equality()?;
-            expr = Logical::new(Box::new(expr), operator, Box::new(right)).into()
+            expr = Logical::new(Box::new(expr), operator, Box::new(right), None).into()
         }
         Ok(expr)
     }
@@ -258,7 +257,7 @@ impl Parser {
         while check!(self.peek(), Or) {
             let operator = self.advance().clone();
             let right = self.and()?;
-            expr = Logical::new(Box::new(expr), operator, Box::new(right)).into();
+            expr = Logical::new(Box::new(expr), operator, Box::new(right), None).into();
         }
         Ok(expr)
     }
@@ -274,7 +273,7 @@ impl Parser {
             return match &expr {
                 Expr::Variable(var) => {
                     let name = &var.name;
-                    Ok(Assign::new(name.clone(), Box::new(value)).into())
+                    Ok(Assign::new(name.clone(), Box::new(value), None).into())
                 }
                 _ => Err(ParseError::new(
                     "Invalid l value for assignment".into(),
@@ -290,7 +289,7 @@ impl Parser {
         while check!(self.peek(), EqualEqual | BangEqual) {
             let operator = (*self.advance()).clone();
             let right = self.comparision()?;
-            expr = Expr::Binary(Binary::new(Box::new(expr), operator, Box::new(right)))
+            expr = Binary::new(Box::new(expr), operator, Box::new(right), None).into()
         }
         Ok(expr)
     }
@@ -303,7 +302,7 @@ impl Parser {
         while check!(self.peek(), Greater | GreaterEqual | Less | LessEqual) {
             let operator = (*self.advance()).clone();
             let right = self.term()?;
-            expr = Expr::Binary(Binary::new(Box::new(expr), operator, Box::new(right)));
+            expr = Binary::new(Box::new(expr), operator, Box::new(right), None).into();
         }
         Ok(expr)
     }
@@ -314,7 +313,7 @@ impl Parser {
         while check!(self.peek(), Minus | Plus) {
             let operator = (*self.advance()).clone();
             let right = self.factor()?;
-            expr = Expr::Binary(Binary::new(Box::new(expr), operator, Box::new(right)));
+            expr = Binary::new(Box::new(expr), operator, Box::new(right), None).into();
         }
         Ok(expr)
     }
@@ -326,7 +325,7 @@ impl Parser {
         while check!(self.peek(), Slash | Star) {
             let operator = (*self.advance()).clone();
             let right = self.unary()?;
-            expr = Expr::Binary(Binary::new(Box::new(expr), operator, Box::new(right)));
+            expr = Binary::new(Box::new(expr), operator, Box::new(right), None).into();
         }
         Ok(expr)
     }
@@ -337,7 +336,7 @@ impl Parser {
         if check!(self.peek(), Bang | Minus) {
             let operator = (*self.advance()).clone();
             let right = self.unary()?;
-            Ok(Expr::Unary(Unary::new(operator, Box::new(right))))
+            Ok(Unary::new(operator, Box::new(right), None).into())
         } else {
             self.call()
         }
@@ -378,7 +377,7 @@ impl Parser {
             }
         }
         let paren = self.consume(RightParen, "Expect ')' after arguments.")?;
-        Ok(Call::new(Box::new(callee), paren.clone(), args).into())
+        Ok(Call::new(Box::new(callee), paren.clone(), args, None).into())
     }
     fn primary(&mut self) -> ParseResult<Expr> {
         use TokenType::{
@@ -389,11 +388,11 @@ impl Parser {
             True => LoxType::True.into(),
             Nil => LoxType::Nil.into(),
             Number | String => self.previous().literal.clone().into(),
-            Identifier => Expr::Variable(Variable::new(self.previous().clone())),
+            Identifier => Variable::new(self.previous().clone(), None).into(),
             LeftParen => {
                 let expr = self.expression()?;
                 self.consume(RightParen, "Expected ')' after expression")?;
-                Grouping::new(Box::new(expr)).into()
+                Grouping::new(Box::new(expr), None).into()
             }
             Semicolon => {
                 // found a semicolon
@@ -432,14 +431,14 @@ impl Parser {
             self.advance();
         }
     }
-    #[inline]
+
     fn error<T>(&mut self, t: &Token, err: &str) -> ParseResult<T> {
         Err(match t.ty {
             TokenType::EOF => ParseError::new(format!("at the end: {err}"), t.line),
             _ => ParseError::new(format!("at '{}': {}", t.lexeme, err), t.line),
         })
     }
-    #[inline]
+
     #[must_use = "consume causes parse errors when failed which needs to be reconciled"]
     fn consume(&mut self, x: TokenType, err: &str) -> ParseResult<&Token> {
         if self.peek().unwrap().ty == x {
@@ -449,21 +448,19 @@ impl Parser {
             self.error(token, err)
         }
     }
-    #[inline]
+
     fn peek(&self) -> Option<&Token> {
         self.tokens.get(self.current)
     }
 
-    #[inline]
     fn previous(&self) -> &Token {
         self.tokens.get(self.current - 1).unwrap()
     }
-    #[inline]
+
     fn is_at_end(&self) -> bool {
         check!(self.peek(), TokenType::EOF)
     }
 
-    #[inline]
     fn advance(&mut self) -> &Token {
         if !self.is_at_end() {
             self.current += 1;

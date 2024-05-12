@@ -2,12 +2,12 @@
 macro_rules! gen_struct {
     ($st_name:ident, $($variant:ident $(, $field:ident: $ty:ty)*);*) => {
 
-        pub trait Visitor<R> {
-            $(
-                #[allow(non_snake_case)]
-                fn $variant(&mut self, e: &$variant) -> R;
-            )*
-        }
+        // pub trait Visitor<Result> : Sized {
+        //     $(
+        //         #[allow(non_snake_case)]
+        //         fn $variant( self, e: $variant) -> Result;
+        //     )*
+        // }
 
         $(#[derive(Debug, Clone)]
         pub struct $variant {
@@ -20,16 +20,16 @@ macro_rules! gen_struct {
                 Self { $($field),* }
             }
 
-            #[allow(dead_code)]
-            pub fn accept<T:Visitor<R>,R>(&self,x:&mut T)->R{
-                x.$variant(self)
-            }
+            // #[allow(dead_code)]
+            // pub fn accept<T:Visitor<Res>,Res>(self,x:T)->Res{
+            //     x.$variant(self)
+            // }
         })*
 
         $(
 
             impl From<$variant> for $st_name {
-                #[inline]
+
                 fn from(value:$variant) ->Self {
                     Self::$variant(value)
                 }
@@ -45,15 +45,17 @@ macro_rules! gen_struct {
                 $variant($variant),
             )*
         }
-        impl $st_name {
-            #[allow(dead_code)]
-            pub fn accept<T: Visitor<R>, R>(&self, x: &mut T) -> R {
-                let ax = self;
-                match ax {
-                    $($st_name::$variant(v) => v.accept(x),)*
-                }
-            }
-        }
+        // impl $st_name {
+        //     #[allow(dead_code)]
+        //     pub fn accept<T: Visitor<Res>, Res>(self, x: T) -> Res {
+        //         let ax = self;
+        //         match ax {
+        //             $($st_name::$variant(v) => {
+        //                  v.accept(x)
+        //             },)*
+        //         }
+        //     }
+        // }
 
 
 

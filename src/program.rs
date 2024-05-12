@@ -2,9 +2,9 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::process::exit;
 
-use crate::interpreter::Interpreter;
+use crate::interpreter::{self, Interpreter};
 use crate::parser::Parser;
-use crate::resolver;
+use crate::resolver::Resolver;
 use crate::scanner::Scanner;
 use crate::tokens::token::LoxType;
 
@@ -25,7 +25,7 @@ impl Program {
 impl Program {
     fn run(mut self, line: String) -> (Self, LoxType) {
         if line.is_empty() {
-            return (self, LoxType::InternalNoValue);
+            return (self, Default::default());
         }
         let scanner = Scanner::new(line);
         let tokens = scanner.scan_tokens();
@@ -44,20 +44,31 @@ impl Program {
                     return (self, Default::default());
                 }
 
-                let stmts: Vec<_> = stmts.into_iter().map(Result::unwrap).collect();
-                let mut resolver = resolver::Resolver::new(self.interpreter);
-                resolver.resolve_statements(&stmts);
+                let mut stmts = stmts.into_iter().map(Result::unwrap).collect::<Vec<_>>();
+                let interpreter = self.interpreter;
+                let resolver = Resolver::new(interpreter);
+                match resolver.resolve_statements(stmts) {
+                    Ok((i, b)) => {
+                        stmts = i;
+                        self.interpreter = b.interpreter;
+                    }
+                    Err(e) => {
+                        self.interpreter = e.interpreter;
+                        self.error(e.line, &e.message);
+                        return (self, Default::default());
+                    }
+                }
                 match self.interpreter.interpret(&stmts) {
                     Err(r) => {
                         self.runtime_error(0, &r.message);
-                        (self, LoxType::InternalNoValue)
+                        (self, Default::default())
                     }
                     Ok(v) => (self, v),
                 }
             }
             Err(err) => {
                 self.error(err.line, &err.message);
-                (self, LoxType::InternalNoValue)
+                (self, Default::default())
             }
         }
     }

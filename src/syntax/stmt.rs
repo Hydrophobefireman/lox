@@ -20,6 +20,7 @@ impl Default for Stmt {
     fn default() -> Self {
         return Stmt::Expression(Expression::new(Expr::Literal(Literal::new(
             LoxType::InternalNoValue,
+            None,
         ))));
     }
 }
