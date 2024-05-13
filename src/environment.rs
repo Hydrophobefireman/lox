@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use crate::{
-    errors::{RuntimeError, RuntimeResult},
+    errors::{EnvError, EnvResult},
     tokens::token::{LoxType, Token},
 };
 
@@ -34,7 +34,7 @@ impl Environment {
         self.values.insert(name.into(), value);
     }
 
-    pub fn assign(&mut self, name: Token, value: LoxType) -> RuntimeResult<()> {
+    pub fn assign(&mut self, name: Token, value: LoxType) -> EnvResult<()> {
         if self.values.contains_key(&name.lexeme) {
             self.define(&name.lexeme, value);
             Ok(())
@@ -44,7 +44,7 @@ impl Environment {
                     outer.borrow_mut().assign(name, value)?;
                     Ok(())
                 }
-                None => Err(RuntimeError::new(
+                None => Err(EnvError::new(
                     format!("Undefined variable '{}'", name.lexeme),
                     name.line,
                 )),
@@ -52,18 +52,18 @@ impl Environment {
         }
     }
 
-    pub fn get(&self, name: &Token) -> RuntimeResult<LoxType> {
+    pub fn get(&self, name: &Token) -> EnvResult<LoxType> {
         if self.values.contains_key(&name.lexeme) {
             self.values
                 .get(&name.lexeme)
                 .ok_or_else(|| {
-                    RuntimeError::new(format!("Undefined variable '{}'", name.lexeme), name.line)
+                    EnvError::new(format!("Undefined variable '{}'", name.lexeme), name.line)
                 })
                 .map(|f| f.clone())
         } else {
             match &self.enclosing {
                 Some(outer) => outer.borrow().get(name),
-                None => Err(RuntimeError::new(
+                None => Err(EnvError::new(
                     format!("Undefined variable '{}'", name.lexeme),
                     name.line,
                 )),

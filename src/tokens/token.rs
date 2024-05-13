@@ -1,16 +1,15 @@
 use std::fmt::Display;
 
-use crate::{
-    errors::{RuntimeError, RuntimeResult},
-    interpreter::Interpreter,
-    tokens::token_type::TokenType,
-};
+use crate::{errors::RuntimeResult, interpreter::Interpreter, tokens::token_type::TokenType};
 pub trait LoxCallable {
     fn kind(&self) -> LoxCollableType;
     fn name(&self) -> String;
     fn arity(&self) -> usize;
-    fn call(&mut self, interpreter: &mut Interpreter, args: Vec<LoxType>)
-        -> RuntimeResult<LoxType>;
+    fn call(
+        &mut self,
+        interpreter: Interpreter,
+        args: Vec<LoxType>,
+    ) -> RuntimeResult<(LoxType, Interpreter)>;
     fn clone_box(&self) -> Box<dyn LoxCallable>;
 }
 impl std::fmt::Debug for dyn LoxCallable {
@@ -42,6 +41,19 @@ pub enum LoxType {
     InternalNoValue,
 }
 
+impl PartialEq for LoxType {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::String(l0), Self::String(r0)) => l0 == r0,
+            (Self::Float(l0), Self::Float(r0)) => l0 == r0,
+            (LoxType::True, LoxType::True)
+            | (LoxType::False, LoxType::False)
+            | (LoxType::InternalNoValue, LoxType::InternalNoValue) => true,
+            _ => false,
+        }
+    }
+}
+
 impl Display for LoxType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -70,13 +82,6 @@ impl From<f64> for LoxType {
 impl Default for LoxType {
     fn default() -> Self {
         LoxType::InternalNoValue
-    }
-}
-
-pub fn literal_to_float(x: LoxType) -> Result<f64, RuntimeError> {
-    match x {
-        LoxType::Float(v) => Ok(v),
-        _ => Err(RuntimeError::new("Cannot convert to float".into(), 0)),
     }
 }
 

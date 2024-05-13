@@ -20,12 +20,12 @@ impl LoxCallable for Clock {
         0
     }
 
-    fn call(&mut self, _: &mut Interpreter, _: Vec<LoxType>) -> RuntimeResult<LoxType> {
+    fn call(&mut self, i: Interpreter, _: Vec<LoxType>) -> RuntimeResult<(LoxType, Interpreter)> {
         let start = SystemTime::now();
         let since_the_epoch = start
             .duration_since(UNIX_EPOCH)
             .expect("Time went backwards");
-        Ok(since_the_epoch.as_secs_f64().into())
+        Ok((since_the_epoch.as_secs_f64().into(), i))
     }
     fn clone_box(&self) -> Box<dyn LoxCallable> {
         Box::new(Self {})

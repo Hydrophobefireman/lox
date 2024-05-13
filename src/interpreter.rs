@@ -10,7 +10,7 @@ use crate::{
         stmt::{self, Stmt},
     },
     tokens::{
-        token::{literal_to_float, LoxType},
+        token::{LoxType, Token},
         token_type::TokenType,
     },
 };
@@ -23,10 +23,6 @@ pub struct Interpreter {
 }
 
 impl Interpreter {
-    fn evaluate(self, e: Expr) -> RuntimeResult<LoxType> {
-        e.accept(self)
-    }
-
     fn is_truthy(&self, e: &LoxType) -> bool {
         !matches!(e, LoxType::False)
     }
@@ -35,239 +31,291 @@ impl Interpreter {
         e.to_string()
     }
 
-    pub fn interpret(&mut self, statements: &Vec<Stmt>) -> RuntimeResult<LoxType> {
+    pub fn interpret(self, statements: Vec<Stmt>) -> RuntimeResult<(LoxType, Self)> {
         let mut result = Default::default();
+        let mut this = self;
         for stmt in statements {
-            result = self.execute(stmt)?;
+            (result, this) = this.execute(stmt)?;
         }
-        Ok(result)
+        Ok((result, this))
     }
+    fn evaluate(self, expr: Expr) -> RuntimeResult<(LoxType, Self)> {
+        match expr {
+            Expr::Assign(e) => {
+                let (val, this) = self.evaluate(*e.value)?;
+                let put = this.env.borrow_mut().assign(e.name.clone(), val.clone());
+                match put {
+                    Err(e) => return Err(RuntimeError::new(e.message, e.line, this)),
+                    _ => (),
+                }
+                Ok((val, this))
+            }
 
-    fn execute(self, stmt: Stmt) -> RuntimeResult<LoxType> {
-        Ok(stmt.accept(self)?)
+            Expr::Binary(e) => {
+                let (left, this) = self.evaluate(*e.left)?;
+                let (right, this) = this.evaluate(*e.right)?;
+
+                fn float_op(a: LoxType, b: LoxType, op: TokenType) -> Result<LoxType, ()> {
+                    if let LoxType::Float(a) = a {
+                        if let LoxType::Float(b) = b {
+                            let lv: LoxType = match op {
+                                TokenType::Minus => (a - b).into(),
+                                TokenType::Slash => (a / b).into(),
+                                TokenType::Star => (a * b).into(),
+                                TokenType::Plus => (a + b).into(),
+                                TokenType::Greater => (a > b).into(),
+                                TokenType::GreaterEqual => (a >= b).into(),
+                                TokenType::Less => (a < b).into(),
+                                TokenType::LessEqual => (a <= b).into(),
+                                TokenType::BangEqual => (a != b).into(),
+                                TokenType::EqualEqual => (a == b).into(),
+                                _ => panic!("Unknown binary op!"),
+                            };
+                            return Ok(lv);
+                        }
+                    }
+                    return Err(());
+                }
+                use TokenType::*;
+                match e.operator.ty {
+                    ty @ (Minus | Slash | Star | Greater | GreaterEqual | Less | LessEqual
+                    | BangEqual | EqualEqual) => {
+                        let res = float_op(left, right, ty);
+                        match res {
+                            Ok(t) => Ok((t, this)),
+                            Err(_) => Err({
+                                RuntimeError::new(
+                                    "Invalid operands for binary operation".into(),
+                                    e.operator.line,
+                                    this,
+                                )
+                            }),
+                        }
+                    }
+
+                    TokenType::Plus => match (left, right) {
+                        (LoxType::String(mut left_str), LoxType::String(right_str)) => {
+                            left_str.push_str(right_str.as_str());
+                            Ok((LoxType::String(left_str), this))
+                        }
+                        (LoxType::Float(l), LoxType::Float(r)) => Ok(((l + r).into(), this)),
+
+                        (a, b) => {
+                            let msg=format!(
+                            "Invalid addition. Operands must be 2 strings or 2 numbers. Found: {a}, {b}"
+                        );
+                            Err(RuntimeError::new(msg, e.operator.line, this))
+                        }
+                    },
+                    _ => panic!("Unknown binary op!"),
+                }
+            }
+            Expr::Call(e) => {
+                let (callee, mut this) = self.evaluate(*e.callee)?;
+                let mut args = Vec::with_capacity(e.args.len());
+                for arg in e.args {
+                    let it;
+                    (it, this) = this.evaluate(arg)?;
+                    args.push(it);
+                }
+
+                match callee {
+                    LoxType::Callable(mut f) => {
+                        if args.len() != f.arity() {
+                            return Err(RuntimeError::new(
+                                format!("Expected {} args, got {}", f.arity(), args.len()),
+                                e.paren.line,
+                                this,
+                            ));
+                        }
+                        let (res, this) = f.call(this, args)?;
+                        Ok((res, this))
+                    }
+                    _ => {
+                        return Err(RuntimeError::new(
+                            "Cannot call uncallable".into(),
+                            e.paren.line,
+                            this,
+                        ))
+                    }
+                }
+            }
+            Expr::Grouping(e) => self.evaluate(*e.expression),
+            Expr::Literal(e) => Ok((e.value, self)),
+            Expr::Logical(e) => {
+                let (left, this) = self.evaluate(*e.left)?;
+                match e.operator.ty {
+                    TokenType::Or => {
+                        if this.is_truthy(&left) {
+                            return Ok((left, this));
+                        }
+                    }
+                    TokenType::And => {
+                        if !this.is_truthy(&left) {
+                            return Ok((left, this));
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+                this.evaluate(*e.right)
+            }
+            Expr::Unary(e) => {
+                let (right, this) = self.evaluate(*e.right)?;
+                match e.operator.ty {
+                    TokenType::Plus => Err(RuntimeError::new(
+                        "+{value} is not supported".into(),
+                        e.operator.line,
+                        this,
+                    )),
+                    TokenType::Minus => match right {
+                        LoxType::Float(f) => Ok((LoxType::Float(-f), this)),
+                        _ => Err(RuntimeError::new(
+                            "Cannot perform negation on non number".into(),
+                            e.operator.line,
+                            this,
+                        )),
+                    },
+                    TokenType::Bang => Ok(((!this.is_truthy(&right)).into(), this)),
+                    _ => panic!("?"),
+                }
+            }
+            Expr::Variable(e) => {
+                let val = self.env.borrow().get(&e.name);
+                match val {
+                    Err(e) => Err(RuntimeError::new(e.message, e.line, self)),
+                    Ok(val) => Ok((val, self)),
+                }
+            }
+        }
+    }
+    fn execute(self, stmt: Stmt) -> RuntimeResult<(LoxType, Self)> {
+        match stmt {
+            Stmt::Block(e) => {
+                let new_env = Environment::new(Some(Rc::clone(&self.env)));
+                let this = self.execute_block(e.statements, new_env)?;
+                Ok((LoxType::Nil, this))
+            }
+            Stmt::Expression(e) => self.evaluate(e.expression),
+            Stmt::Function(e) => {
+                let function = LoxFunction::new(e.clone(), Rc::clone(&self.env));
+                self.env
+                    .borrow_mut()
+                    .define(&e.name.lexeme, function.into());
+                Ok((Default::default(), self))
+            }
+            Stmt::If(e) => {
+                let cond = e.cond;
+                let branch = e.then_branch;
+                let else_branch = e.else_branch;
+                let (val, mut this) = self.evaluate(cond)?;
+                if this.is_truthy(&val) {
+                    (_, this) = this.execute(*branch)?;
+                } else if let Some(val) = else_branch {
+                    (_, this) = this.execute(*val)?;
+                }
+                Ok((Default::default(), this))
+            }
+            Stmt::Print(e) => {
+                let (ev, this) = self.evaluate(e.expression)?;
+                let value = this.stringify(&ev);
+                println!("{value}");
+                Ok((LoxType::InternalNoValue, this))
+            }
+            Stmt::Return(e) => {
+                let (value, this) = match e.value {
+                    Some(val) => self.evaluate(val)?,
+                    None => (LoxType::Nil, self),
+                };
+                Err(RuntimeError::as_return(value, this))
+            }
+            Stmt::Var(e) => {
+                let (value, this) = self.evaluate(e.initializer)?;
+                this.env.borrow_mut().define(&e.name.lexeme, value);
+                Ok((LoxType::InternalNoValue, this))
+            }
+            Stmt::While(e) => {
+                let mut this = self;
+                let mut value;
+                loop {
+                    let x = this.evaluate(e.cond.clone())?;
+                    (value, this) = x;
+                    if !this.is_truthy(&value) {
+                        break;
+                    }
+                    let body = Box::clone(&e.body);
+                    (_, this) = this.execute(*body)?;
+                }
+                Ok((LoxType::InternalNoValue, this))
+            }
+        }
     }
 
     pub fn new() -> Self {
-        let globals = Rc::new(RefCell::new(Environment::new(None)));
-        globals.borrow_mut().define("clock", (Clock {}).into());
+        let mut globals = Environment::new(None);
+        globals.define("clock", (Clock {}).into());
+        let globals = Rc::new(RefCell::new(globals));
         Self {
             env: Rc::clone(&globals),
             globals,
             locals: Default::default(),
         }
     }
-    fn is_equal(&self, left: &LoxType, right: &LoxType) -> bool {
-        match [left, right] {
-            [LoxType::String(l), LoxType::String(r)] => *l == *r,
-            [LoxType::Float(l), LoxType::Float(r)] => *l == *r,
-            [LoxType::Nil, LoxType::Nil]
-            | [LoxType::True, LoxType::True]
-            | [LoxType::False, LoxType::False]
-            | [LoxType::InternalNoValue, LoxType::InternalNoValue] => true,
-            _ => false,
-        }
-    }
 
-    pub fn execute_block(&mut self, statements: &Vec<Stmt>, env: Environment) -> RuntimeResult<()> {
-        let previous = Rc::clone(&self.env);
+    pub fn execute_block(self, statements: Vec<Stmt>, env: Environment) -> RuntimeResult<Self> {
+        let mut this = self;
+        let previous = Rc::clone(&this.env);
 
-        self.env = Rc::new(RefCell::new(env));
+        this.env = Rc::new(RefCell::new(env));
         for stmt in statements {
-            match self.execute(stmt) {
-                Err(e) => {
-                    self.env = Rc::clone(&previous);
-                    Err(e)?
+            match this.execute(stmt) {
+                Err(mut e) => {
+                    e.interpreter.env = Rc::clone(&previous);
+                    return Err(e);
                 }
-                _ => (),
+                Ok((_, _this)) => {
+                    this = _this;
+                }
             };
         }
-        self.env = previous;
-        Ok(())
+        this.env = previous;
+        Ok(this)
     }
 }
 
-impl expr::Visitor<RuntimeResult<LoxType>> for Interpreter {
-    fn Binary(self, e: Binary) -> RuntimeResult<LoxType> {
-        let left = self.evaluate(&*e.left)?;
-        let right = self.evaluate(&*e.right)?;
-        match e.operator.ty {
-            TokenType::Minus => Ok(LoxType::Float(
-                literal_to_float(left)? - literal_to_float(right)?,
-            )),
+// impl expr::Visitor<RuntimeResult<LoxType>> for Interpreter {
 
-            TokenType::Slash => Ok(LoxType::Float(
-                literal_to_float(left)? / literal_to_float(right)?,
-            )),
-            TokenType::Star => Ok(LoxType::Float(
-                literal_to_float(left)? * literal_to_float(right)?,
-            )),
+//     fn Grouping(&mut self, e: &Grouping) -> RuntimeResult<LoxType> {
+//         self.evaluate(&*e.expression)
+//     }
 
-            TokenType::Plus => match [&left, &right] {
-                [LoxType::String(left_str), LoxType::String(right_str)] => {
-                    Ok(LoxType::String(left_str.clone() + right_str))
-                }
+//     fn Literal(&mut self, e: &Literal) -> RuntimeResult<LoxType> {
+//         Ok(e.value.clone())
+//     }
 
-                [LoxType::Float(l), LoxType::Float(r)] => Ok(LoxType::Float(l + r)),
-                [a, b] => Err(RuntimeError::new(
-                    format!(
-                        "Invalid addition. Operands must be 2 strings or 2 numbers. Found: {a}, {b}"
-                    ),
-                    e.operator.line,
-                )),
-            },
-            TokenType::Greater => Ok(LoxType::from(
-                literal_to_float(left)? > literal_to_float(right)?,
-            )),
-            TokenType::GreaterEqual => Ok(LoxType::from(
-                literal_to_float(left)? >= literal_to_float(right)?,
-            )),
-            TokenType::Less => Ok(LoxType::from(
-                literal_to_float(left)? < literal_to_float(right)?,
-            )),
-            TokenType::LessEqual => Ok(LoxType::from(
-                literal_to_float(left)? <= literal_to_float(right)?,
-            )),
+//     fn Unary(&mut self, e: &Unary) -> RuntimeResult<LoxType> {
 
-            TokenType::BangEqual => Ok(LoxType::from(!self.is_equal(&left, &right))),
-            TokenType::EqualEqual => Ok(LoxType::from(self.is_equal(&left, &right))),
-            _ => panic!("?"),
-        }
-        .map_err(|err| RuntimeError::new(err.message, e.operator.line))
-    }
+//     }
 
-    fn Grouping(&mut self, e: &Grouping) -> RuntimeResult<LoxType> {
-        self.evaluate(&*e.expression)
-    }
+//     fn Variable(&mut self, e: &expr::Variable) -> RuntimeResult<LoxType> {
+//         Ok(self.env.borrow().get(&e.name)?.clone())
+//     }
 
-    fn Literal(&mut self, e: &Literal) -> RuntimeResult<LoxType> {
-        Ok(e.value.clone())
-    }
+//     fn Logical(&mut self, e: &expr::Logical) -> RuntimeResult<LoxType> {
+//         let left = self.evaluate(&*e.left)?;
+//         match e.operator.ty {
+//             TokenType::Or => {
+//                 if self.is_truthy(&left) {
+//                     return Ok(left);
+//                 }
+//             }
+//             TokenType::And => {
+//                 if !self.is_truthy(&left) {
+//                     return Ok(left);
+//                 }
+//             }
+//             _ => unreachable!(),
+//         }
+//         self.evaluate(&*e.right)
+//     }
 
-    fn Unary(&mut self, e: &Unary) -> RuntimeResult<LoxType> {
-        let right = self.evaluate(&*e.right)?;
-        match e.operator.ty {
-            TokenType::Plus => Err(RuntimeError::new(
-                "+{value} is not supported".into(),
-                e.operator.line,
-            )),
-            TokenType::Minus => match right {
-                LoxType::Float(f) => Ok(LoxType::Float(-f)),
-                _ => Err(RuntimeError::new(
-                    "Cannot perform negation on non number".into(),
-                    e.operator.line,
-                )),
-            },
-            TokenType::Bang => Ok(LoxType::from(!self.is_truthy(&right))),
-            _ => panic!("?"),
-        }
-    }
-
-    fn Variable(&mut self, e: &expr::Variable) -> RuntimeResult<LoxType> {
-        Ok(self.env.borrow().get(&e.name)?.clone())
-    }
-    fn Assign(&mut self, e: &expr::Assign) -> RuntimeResult<LoxType> {
-        let val = self.evaluate(&*e.value)?;
-        self.env.borrow_mut().assign(e.name.clone(), val.clone())?;
-        Ok(val)
-    }
-
-    fn Logical(&mut self, e: &expr::Logical) -> RuntimeResult<LoxType> {
-        let left = self.evaluate(&*e.left)?;
-        match e.operator.ty {
-            TokenType::Or => {
-                if self.is_truthy(&left) {
-                    return Ok(left);
-                }
-            }
-            TokenType::And => {
-                if !self.is_truthy(&left) {
-                    return Ok(left);
-                }
-            }
-            _ => unreachable!(),
-        }
-        self.evaluate(&*e.right)
-    }
-    fn Call(&mut self, e: &expr::Call) -> RuntimeResult<LoxType> {
-        let mut callee = self.evaluate(&*e.callee)?;
-        let args: Result<Vec<_>, _> = e.args.iter().map(|arg| self.evaluate(arg)).collect();
-        let args = args?;
-
-        match &mut callee {
-            LoxType::Callable(f) => {
-                if args.len() != f.arity() {
-                    return Err(RuntimeError::new(
-                        format!("Expected {} args, got {}", f.arity(), args.len()),
-                        e.paren.line,
-                    ));
-                }
-                f.call(self, args)
-            }
-            _ => {
-                return Err(RuntimeError::new(
-                    "Cannot call uncallable".into(),
-                    e.paren.line,
-                ))
-            }
-        }
-    }
-}
-
-impl stmt::Visitor<RuntimeResult<LoxType>> for Interpreter {
-    fn Expression(&mut self, e: &stmt::Expression) -> RuntimeResult<LoxType> {
-        self.evaluate(&e.expression)
-    }
-
-    fn Print(&mut self, e: &stmt::Print) -> RuntimeResult<LoxType> {
-        let ev = self.evaluate(&e.expression)?;
-        let value = self.stringify(&ev);
-        println!("{value}");
-        Ok(LoxType::InternalNoValue)
-    }
-
-    fn Var(&mut self, e: &stmt::Var) -> RuntimeResult<LoxType> {
-        let value = self.evaluate(&e.initializer)?;
-        self.env.borrow_mut().define(&e.name.lexeme, value);
-        Ok(LoxType::InternalNoValue)
-    }
-    fn Block(&mut self, e: &stmt::Block) -> RuntimeResult<LoxType> {
-        self.execute_block(&e.statements, Environment::new(Some(Rc::clone(&self.env))))?;
-        Ok(LoxType::Nil)
-    }
-    fn If(&mut self, e: &stmt::If) -> RuntimeResult<LoxType> {
-        let val = self.evaluate(&e.cond)?;
-        if self.is_truthy(&val) {
-            self.execute(&*e.then_branch)?;
-        } else {
-            if let Some(val) = &e.else_branch {
-                self.execute(&*val)?;
-            };
-        }
-        Ok(LoxType::InternalNoValue)
-    }
-
-    fn While(&mut self, e: &stmt::While) -> RuntimeResult<LoxType> {
-        loop {
-            let value = self.evaluate(&e.cond)?;
-            if !self.is_truthy(&value) {
-                break;
-            }
-            self.execute(&*e.body)?;
-        }
-        Ok(LoxType::InternalNoValue)
-    }
-    fn Function(&mut self, e: &stmt::Function) -> RuntimeResult<LoxType> {
-        let function = LoxFunction::new(e.clone(), Rc::clone(&self.env));
-        self.env
-            .borrow_mut()
-            .define(&e.name.lexeme, function.into());
-        Ok(Default::default())
-    }
-    fn Return(&mut self, e: &stmt::Return) -> RuntimeResult<LoxType> {
-        let value = match &e.value {
-            Some(val) => self.evaluate(val)?,
-            None => LoxType::Nil,
-        };
-        Err(RuntimeError::as_return(value))
-    }
-}
+// }

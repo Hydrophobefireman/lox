@@ -58,12 +58,16 @@ impl Program {
                         return (self, Default::default());
                     }
                 }
-                match self.interpreter.interpret(&stmts) {
+                match self.interpreter.interpret(stmts) {
                     Err(r) => {
+                        self.interpreter = r.interpreter;
                         self.runtime_error(0, &r.message);
                         (self, Default::default())
                     }
-                    Ok(v) => (self, v),
+                    Ok(v) => {
+                        self.interpreter = v.1;
+                        (self, v.0)
+                    }
                 }
             }
             Err(err) => {

@@ -40,9 +40,9 @@ impl LoxCallable for LoxFunction {
     }
     fn call(
         &mut self,
-        interpreter: &mut Interpreter,
+        interpreter: Interpreter,
         args: Vec<LoxType>,
-    ) -> RuntimeResult<LoxType> {
+    ) -> RuntimeResult<(LoxType, Interpreter)> {
         let mut env = Environment::new(Some(Rc::clone(&self.closure)));
 
         self.declaration
@@ -52,12 +52,12 @@ impl LoxCallable for LoxFunction {
             .for_each(|(param, arg)| {
                 env.define(&param.lexeme, arg.clone());
             });
-        match interpreter.execute_block(&self.declaration.body, env) {
+        match interpreter.execute_block(self.declaration.body.clone(), env) {
             Err(err) => match err.interrupt_kind {
                 InterruptKind::Builtin => Err(err),
-                InterruptKind::Return(val) => Ok(val),
+                InterruptKind::Return(val) => Ok((val, err.interpreter)),
             },
-            _ => Ok(LoxType::Nil.into()),
+            Ok(ret) => Ok((LoxType::Nil.into(), ret)),
         }
     }
 }

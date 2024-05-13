@@ -27,11 +27,12 @@ macro_rules! err_struct {
     };
 }
 
-err_struct!(RuntimeError, RuntimeResult);
-
 err_struct!(ScanError, ScanResult);
 
 err_struct!(ParseError, ParseResult);
+err_struct!(EnvError, EnvResult);
+
+
 
 #[derive(Debug)]
 pub struct ResolverError {
@@ -53,11 +54,31 @@ impl ResolverError {
 pub type ResolverResult<T> = Result<(T, Resolver), ResolverError>;
 
 impl RuntimeError {
-    pub fn as_return(value: LoxType) -> Self {
+    pub fn as_return(value: LoxType, this: Interpreter) -> Self {
         Self {
             message: Default::default(),
             line: 0,
             interrupt_kind: InterruptKind::Return(value),
+            interpreter: this,
         }
     }
 }
+#[derive(Debug)]
+pub struct RuntimeError {
+    pub message: String,
+    pub line: usize,
+    pub interrupt_kind: InterruptKind,
+    pub interpreter: Interpreter,
+}
+impl RuntimeError {
+    pub fn new(message: String, line: usize, i: Interpreter) -> Self {
+        Self {
+            message,
+            line,
+            interrupt_kind: InterruptKind::Builtin,
+            interpreter: i,
+        }
+    }
+}
+
+pub type RuntimeResult<T> = Result<T, RuntimeError>;
