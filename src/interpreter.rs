@@ -5,20 +5,13 @@ use crate::{
     errors::{RuntimeError, RuntimeResult},
     globals::Clock,
     lox_function::LoxFunction,
-    syntax::{
-        expr::{self, Binary, Expr, Grouping, Literal, Unary},
-        stmt::{self, Stmt},
-    },
-    tokens::{
-        token::{LoxType, Token},
-        token_type::TokenType,
-    },
+    syntax::{expr::Expr, stmt::Stmt},
+    tokens::{token::LoxType, token_type::TokenType},
 };
 
 #[derive(Debug)]
 pub struct Interpreter {
     env: EnclosingEnv,
-    locals: HashMap<Expr, usize>,
     pub globals: EnclosingEnv,
 }
 
@@ -257,7 +250,6 @@ impl Interpreter {
         Self {
             env: Rc::clone(&globals),
             globals,
-            locals: Default::default(),
         }
     }
 

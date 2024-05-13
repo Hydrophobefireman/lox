@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::process::exit;
 
-use crate::interpreter::{self, Interpreter};
+use crate::interpreter::{Interpreter};
 use crate::parser::Parser;
 use crate::resolver::Resolver;
 use crate::scanner::Scanner;
