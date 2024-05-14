@@ -1,9 +1,17 @@
-fun scope(a) {
-  print a;
-  var a = "local";
-  print a;
-  var a = "c";
-  print a;
+class Bacon {
+  init(){
+    print "initing!";
+    return 6;
+  }
+  eat() {
+    print "Crunch crunch crunch!";
+  }
 }
 
-scope("a");
+
+var b = Bacon();
+print b;
+b.lol = b.lmao = b.idc = "1";
+var c = b.eat();
+print b;
+print c;

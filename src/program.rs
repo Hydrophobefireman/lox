@@ -2,7 +2,7 @@ use std::fs;
 use std::io::{self, BufRead, Write};
 use std::process::exit;
 
-use crate::interpreter::{Interpreter};
+use crate::interpreter::Interpreter;
 use crate::parser::Parser;
 use crate::resolver::Resolver;
 use crate::scanner::Scanner;
@@ -58,6 +58,7 @@ impl Program {
                         return (self, Default::default());
                     }
                 }
+
                 match self.interpreter.interpret(stmts) {
                     Err(r) => {
                         self.interpreter = r.interpreter;

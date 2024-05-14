@@ -6,6 +6,9 @@ use crate::{
 gen_struct!(Expr,
     Binary, left: Box<Expr>, operator: Token, right: Box<Expr>, depth:Option<i32>;
     Call, callee: Box<Expr>, paren: Token,args: Vec<Expr>,depth:Option<i32>;
+    Get, object: Box<Expr>, name: Token, depth: Option<i32>;
+    Set, object: Box<Expr>, name: Token, value: Box<Expr>, depth: Option<i32>;
+    This, keyword: Token, depth: Option<i32>;
     Grouping, expression: Box<Expr>,depth:Option<i32>;
     Literal, value: LoxType,depth:Option<i32>;
     Logical, left: Box<Expr>, operator: Token, right: Box<Expr>,depth:Option<i32>;
@@ -39,32 +42,34 @@ impl From<LoxType> for Expr {
 }
 
 impl Expr {
-    pub fn depth(&mut self, dpth: i32) {
+    pub fn set_depth(&mut self, dpth: i32) {
         match self {
-            Expr::Assign(x) => {
-                x.depth = Some(dpth);
-            }
-            Expr::Binary(x) => {
-                x.depth = Some(dpth);
-            }
-            Expr::Call(x) => {
-                x.depth = Some(dpth);
-            }
-            Expr::Grouping(x) => {
-                x.depth = Some(dpth);
-            }
-            Expr::Literal(x) => {
-                x.depth = Some(dpth);
-            }
-            Expr::Logical(x) => {
-                x.depth = Some(dpth);
-            }
-            Expr::Unary(x) => {
-                x.depth = Some(dpth);
-            }
-            Expr::Variable(x) => {
-                x.depth = Some(dpth);
-            }
+            Expr::Assign(x) => x.depth = Some(dpth),
+            Expr::Binary(x) => x.depth = Some(dpth),
+            Expr::Call(x) => x.depth = Some(dpth),
+            Expr::Grouping(x) => x.depth = Some(dpth),
+            Expr::Literal(x) => x.depth = Some(dpth),
+            Expr::Logical(x) => x.depth = Some(dpth),
+            Expr::Unary(x) => x.depth = Some(dpth),
+            Expr::Variable(x) => x.depth = Some(dpth),
+            Expr::Get(x) => x.depth = Some(dpth),
+            Expr::Set(x) => x.depth = Some(dpth),
+            Expr::This(x) => x.depth = Some(dpth),
         };
+    }
+    pub fn get_depth(&self) -> Option<i32> {
+        match self {
+            Expr::Assign(x) => x.depth,
+            Expr::Binary(x) => x.depth,
+            Expr::Call(x) => x.depth,
+            Expr::Grouping(x) => x.depth,
+            Expr::Literal(x) => x.depth,
+            Expr::Logical(x) => x.depth,
+            Expr::Unary(x) => x.depth,
+            Expr::Variable(x) => x.depth,
+            Expr::Get(x) => x.depth,
+            Expr::Set(x) => x.depth,
+            Expr::This(x) => x.depth,
+        }
     }
 }

@@ -187,7 +187,7 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            return Err(ScanError::new("Unterminated string".into(), self.line));
+            return Err(ScanError::new("Unterminated string", self.line));
         }
         self.advance();
 

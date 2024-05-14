@@ -13,7 +13,8 @@ gen_struct!(Stmt,
     Return, keyword: Token, value: Option<Expr>;
     Var, name: Token, initializer: Expr;
     While, cond: Expr, body: Box<Stmt>;
-    Block, statements: Vec<Stmt>
+    Block, statements: Vec<Stmt>;
+    Class, name: Token, methods: Vec<Function>
 );
 
 impl Default for Stmt {

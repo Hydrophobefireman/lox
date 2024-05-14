@@ -4,9 +4,16 @@ use crate::{
     environment::{EnclosingEnv, Environment},
     errors::{RuntimeError, RuntimeResult},
     globals::Clock,
-    lox_function::LoxFunction,
-    syntax::{expr::Expr, stmt::Stmt},
-    tokens::{token::LoxType, token_type::TokenType},
+    lox_class::LoxClass,
+    lox_function::{FunctionKind, LoxFunction},
+    syntax::{
+        expr::Expr,
+        stmt::{Function, Stmt},
+    },
+    tokens::{
+        token::{LoxInstanceValue, LoxType, Token},
+        token_type::TokenType,
+    },
 };
 
 #[derive(Debug)]
@@ -36,12 +43,17 @@ impl Interpreter {
         match expr {
             Expr::Assign(e) => {
                 let (val, this) = self.evaluate(*e.value)?;
-                let put = this.env.borrow_mut().assign(e.name.clone(), val.clone());
-                match put {
-                    Err(e) => return Err(RuntimeError::new(e.message, e.line, this)),
-                    _ => (),
+                let res = if let Some(distance) = e.depth {
+                    this.env
+                        .borrow_mut()
+                        .assign_at(e.name, val.clone(), distance)
+                } else {
+                    this.globals.borrow_mut().assign(&e.name, val.clone())
+                };
+                match res {
+                    Err(e) => Err(RuntimeError::new(e.message, e.line, this)),
+                    Ok(_) => Ok((val, this)),
                 }
-                Ok((val, this))
             }
 
             Expr::Binary(e) => {
@@ -78,7 +90,7 @@ impl Interpreter {
                             Ok(t) => Ok((t, this)),
                             Err(_) => Err({
                                 RuntimeError::new(
-                                    "Invalid operands for binary operation".into(),
+                                    "Invalid operands for binary operation",
                                     e.operator.line,
                                     this,
                                 )
@@ -126,7 +138,7 @@ impl Interpreter {
                     }
                     _ => {
                         return Err(RuntimeError::new(
-                            "Cannot call uncallable".into(),
+                            "Cannot call uncallable",
                             e.paren.line,
                             this,
                         ))
@@ -156,14 +168,14 @@ impl Interpreter {
                 let (right, this) = self.evaluate(*e.right)?;
                 match e.operator.ty {
                     TokenType::Plus => Err(RuntimeError::new(
-                        "+{value} is not supported".into(),
+                        "+{value} is not supported",
                         e.operator.line,
                         this,
                     )),
                     TokenType::Minus => match right {
                         LoxType::Float(f) => Ok((LoxType::Float(-f), this)),
                         _ => Err(RuntimeError::new(
-                            "Cannot perform negation on non number".into(),
+                            "Cannot perform negation on non number",
                             e.operator.line,
                             this,
                         )),
@@ -173,12 +185,65 @@ impl Interpreter {
                 }
             }
             Expr::Variable(e) => {
-                let val = self.env.borrow().get(&e.name);
-                match val {
-                    Err(e) => Err(RuntimeError::new(e.message, e.line, self)),
-                    Ok(val) => Ok((val, self)),
+                let name = e.name.clone();
+                self.lookup_var(&name, e.into())
+            }
+            Expr::Get(expr) => {
+                let name = expr.name;
+                let line = name.line;
+                let (obj, this) = self.evaluate(*expr.object)?;
+                // dbg!(&obj);
+                if let LoxType::Data(inst) = obj {
+                    match inst.borrow().get(name) {
+                        Ok(res) => match res {
+                            LoxInstanceValue::Free(res) => Ok((res, this)),
+                            LoxInstanceValue::Bound(fun) => {
+                                let bound_fun = fun.bind(LoxType::Data(Rc::clone(&inst)));
+                                Ok((bound_fun.into(), this))
+                            }
+                        },
+                        Err(e) => Err(RuntimeError::new(e.message, e.line, this)),
+                    }
+                } else {
+                    Err(RuntimeError::new(
+                        "Only instances have properties!",
+                        line,
+                        this,
+                    ))
                 }
             }
+            Expr::Set(expr) => {
+                let name = expr.name;
+                let line = name.line;
+                let (obj, this) = self.evaluate(*expr.object)?;
+
+                if let LoxType::Data(inst) = obj {
+                    let (value, this) = this.evaluate(*expr.value)?;
+
+                    inst.borrow_mut().set(name, value.clone());
+                    // inst.set(name, value.clone());
+                    Ok((value, this))
+                } else {
+                    Err(RuntimeError::new(
+                        "Only instances have properties!",
+                        line,
+                        this,
+                    ))
+                }
+            }
+            Expr::This(expr) => self.lookup_var(&expr.keyword.clone(), expr.into()),
+        }
+    }
+
+    fn lookup_var(self, e: &Token, expr: Expr) -> Result<(LoxType, Interpreter), RuntimeError> {
+        let val = if let Some(distance) = expr.get_depth() {
+            self.env.borrow().get_at(e, distance)
+        } else {
+            self.globals.borrow().get(e)
+        };
+        match val {
+            Err(e) => Err(RuntimeError::new(e.message, e.line, self)),
+            Ok(val) => Ok((val, self)),
         }
     }
     fn execute(self, stmt: Stmt) -> RuntimeResult<(LoxType, Self)> {
@@ -190,7 +255,8 @@ impl Interpreter {
             }
             Stmt::Expression(e) => self.evaluate(e.expression),
             Stmt::Function(e) => {
-                let function = LoxFunction::new(e.clone(), Rc::clone(&self.env));
+                let function =
+                    LoxFunction::new(e.clone(), Rc::clone(&self.env), FunctionKind::Function);
                 self.env
                     .borrow_mut()
                     .define(&e.name.lexeme, function.into());
@@ -212,7 +278,7 @@ impl Interpreter {
                 let (ev, this) = self.evaluate(e.expression)?;
                 let value = this.stringify(&ev);
                 println!("{value}");
-                Ok((LoxType::InternalNoValue, this))
+                Ok((Default::default(), this))
             }
             Stmt::Return(e) => {
                 let (value, this) = match e.value {
@@ -224,7 +290,7 @@ impl Interpreter {
             Stmt::Var(e) => {
                 let (value, this) = self.evaluate(e.initializer)?;
                 this.env.borrow_mut().define(&e.name.lexeme, value);
-                Ok((LoxType::InternalNoValue, this))
+                Ok((Default::default(), this))
             }
             Stmt::While(e) => {
                 let mut this = self;
@@ -238,7 +304,32 @@ impl Interpreter {
                     let body = Box::clone(&e.body);
                     (_, this) = this.execute(*body)?;
                 }
-                Ok((LoxType::InternalNoValue, this))
+                Ok((Default::default(), this))
+            }
+            Stmt::Class(cls) => {
+                let methods = cls
+                    .methods
+                    .into_iter()
+                    .map(|method| {
+                        let name = method.name.lexeme.clone();
+                        let fun = LoxFunction::new(
+                            method,
+                            Rc::clone(&self.env),
+                            if name == "init" {
+                                FunctionKind::Init
+                            } else {
+                                FunctionKind::Function
+                            },
+                        );
+                        (name, fun)
+                    })
+                    .collect::<HashMap<_, _>>();
+                let function = LoxClass::new(cls.name.lexeme.clone(), methods);
+                self.env
+                    .borrow_mut()
+                    .define(cls.name.lexeme.as_str(), function.into());
+
+                Ok((Default::default(), self))
             }
         }
     }

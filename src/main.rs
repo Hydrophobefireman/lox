@@ -2,6 +2,7 @@ mod ast_printer;
 mod errors;
 mod globals;
 mod interpreter;
+mod lox_class;
 mod lox_function;
 mod parser;
 mod program;

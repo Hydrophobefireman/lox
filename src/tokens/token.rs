@@ -1,6 +1,9 @@
-use std::fmt::Display;
+use std::{cell::RefCell, fmt::Display, rc::Rc};
 
-use crate::{errors::RuntimeResult, interpreter::Interpreter, tokens::token_type::TokenType};
+use crate::{
+    errors::RuntimeResult, interpreter::Interpreter, lox_class::LoxInstance,
+    lox_function::LoxFunction, tokens::token_type::TokenType,
+};
 pub trait LoxCallable {
     fn kind(&self) -> LoxCollableType;
     fn name(&self) -> String;
@@ -30,6 +33,11 @@ impl Clone for Box<dyn LoxCallable> {
         self.clone_box()
     }
 }
+
+pub enum LoxInstanceValue<'a> {
+    Free(LoxType),
+    Bound(&'a LoxFunction),
+}
 #[derive(Debug, Clone)]
 pub enum LoxType {
     String(String),
@@ -39,6 +47,7 @@ pub enum LoxType {
     Nil,
     Callable(Box<dyn LoxCallable>),
     InternalNoValue,
+    Data(Rc<RefCell<LoxInstance>>),
 }
 
 impl PartialEq for LoxType {
@@ -63,7 +72,8 @@ impl Display for LoxType {
             LoxType::False => write!(f, "false"),
             LoxType::Nil => write!(f, "nil"),
             LoxType::InternalNoValue => write!(f, "(?unresolved?)"),
-            LoxType::Callable(c) => write!(f, "[{:?} {}]", c.kind(), &c.name()),
+            LoxType::Callable(c) => write!(f, "[{:?} {}]", c.kind(), c.name()),
+            LoxType::Data(inst) => write!(f, "{} {{}}", inst.borrow().this.name()),
         }
     }
 }
@@ -100,6 +110,14 @@ impl Token {
             lexeme,
             literal,
             line,
+        }
+    }
+    pub fn dummy_this() -> Self {
+        Self {
+            ty: TokenType::This,
+            lexeme: "this".into(),
+            literal: LoxType::Nil,
+            line: 0,
         }
     }
 }

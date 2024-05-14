@@ -6,34 +6,6 @@ pub enum InterruptKind {
     Return(LoxType),
 }
 
-macro_rules! err_struct {
-    ($name:ident,$err:ident) => {
-        #[derive(Debug)]
-        pub struct $name {
-            pub message: String,
-            pub line: usize,
-            pub interrupt_kind: InterruptKind,
-        }
-        impl $name {
-            pub fn new(message: String, line: usize) -> Self {
-                Self {
-                    message,
-                    line,
-                    interrupt_kind: InterruptKind::Builtin,
-                }
-            }
-        }
-        pub type $err<T> = Result<T, $name>;
-    };
-}
-
-err_struct!(ScanError, ScanResult);
-
-err_struct!(ParseError, ParseResult);
-err_struct!(EnvError, EnvResult);
-
-
-
 #[derive(Debug)]
 pub struct ResolverError {
     pub message: String,
@@ -42,9 +14,9 @@ pub struct ResolverError {
     pub interpreter: Interpreter,
 }
 impl ResolverError {
-    pub fn new(message: String, line: usize, i: Interpreter) -> Self {
+    pub fn new<T: Into<String>>(message: T, line: usize, i: Interpreter) -> Self {
         Self {
-            message,
+            message: message.into(),
             line,
             interrupt_kind: InterruptKind::Builtin,
             interpreter: i,
@@ -71,9 +43,9 @@ pub struct RuntimeError {
     pub interpreter: Interpreter,
 }
 impl RuntimeError {
-    pub fn new(message: String, line: usize, i: Interpreter) -> Self {
+    pub fn new<T: Into<String>>(message: T, line: usize, i: Interpreter) -> Self {
         Self {
-            message,
+            message: message.into(),
             line,
             interrupt_kind: InterruptKind::Builtin,
             interpreter: i,
@@ -82,3 +54,30 @@ impl RuntimeError {
 }
 
 pub type RuntimeResult<T> = Result<T, RuntimeError>;
+
+macro_rules! err_struct {
+    ($name:ident,$err:ident) => {
+        #[derive(Debug)]
+        pub struct $name {
+            pub message: String,
+            pub line: usize,
+            pub interrupt_kind: InterruptKind,
+        }
+        impl $name {
+            pub fn new<T: Into<String>>(message: T, line: usize) -> Self {
+                Self {
+                    message: message.into(),
+                    line,
+                    interrupt_kind: InterruptKind::Builtin,
+                }
+            }
+        }
+        pub type $err<T> = Result<T, $name>;
+    };
+}
+
+err_struct!(ScanError, ScanResult);
+
+err_struct!(ParseError, ParseResult);
+err_struct!(EnvError, EnvResult);
+err_struct!(LoxClassError, LoxClassResult);

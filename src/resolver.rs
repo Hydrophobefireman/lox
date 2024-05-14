@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, vec};
 
 use crate::{
     errors::{ResolverError, ResolverResult},
@@ -11,16 +11,32 @@ use crate::{
 };
 
 #[derive(Debug)]
+enum FunctionState {
+    None,
+    Function,
+    Method,
+    Initializer,
+}
+#[derive(Debug)]
+enum ClassState {
+    None,
+    Class,
+}
+#[derive(Debug)]
 pub struct Resolver {
     pub interpreter: Interpreter,
     scopes: Vec<HashMap<String, bool>>,
+    function_state: FunctionState,
+    class_state: ClassState,
 }
 
 impl Resolver {
     pub fn new(interpreter: Interpreter) -> Self {
         Self {
             interpreter,
-            scopes: Default::default(),
+            scopes: vec![Default::default()],
+            function_state: FunctionState::None,
+            class_state: ClassState::None,
         }
     }
 
@@ -51,9 +67,46 @@ impl Resolver {
             Stmt::Return(ret) => self.handle_return_stmt(ret),
             Stmt::Var(v) => self.handle_var_stmt(v),
             Stmt::While(wh) => self.handle_while_stmt(wh),
+            Stmt::Class(cls) => self.handle_class_stmt(cls),
         }
     }
+    fn handle_class_stmt(mut self, mut cls: stmt::Class) -> ResolverResult<Stmt> {
+        self.begin_scope();
+        let curr = self.class_state;
+        self.class_state = ClassState::Class;
+        self.scopes
+            .last_mut()
+            .map(|scope| scope.insert("this".into(), true));
 
+        match self.declare(&cls.name) {
+            Err(message) => {
+                return Err(ResolverError::new(message, cls.name.line, self.interpreter));
+            }
+            _ => (),
+        };
+        self.define(&cls.name);
+        let mut this: Resolver = self;
+        let mut methods = Vec::with_capacity(cls.methods.len());
+        for method in cls.methods {
+            let meth;
+            let decl = if method.name.lexeme == "init" {
+                FunctionState::Initializer
+            } else {
+                FunctionState::Method
+            };
+            (meth, this) = this.resolve_function(method, decl)?;
+            match meth {
+                Stmt::Function(fun) => {
+                    methods.push(fun);
+                }
+                _ => panic!("Expected function??"),
+            }
+        }
+        cls.methods = methods;
+        this.end_scope();
+        this.class_state = curr;
+        Ok((cls.into(), this))
+    }
     fn handle_while_stmt(self, mut e: stmt::While) -> ResolverResult<Stmt> {
         let mut this = self;
         let cond;
@@ -66,7 +119,12 @@ impl Resolver {
     }
 
     fn handle_var_stmt(mut self, mut e: stmt::Var) -> ResolverResult<Stmt> {
-        self.declare(&e.name);
+        match self.declare(&e.name) {
+            Err(message) => {
+                return Err(ResolverError::new(message, e.name.line, self.interpreter));
+            }
+            _ => (),
+        }
         let (init, mut this) = match &e.initializer {
             Expr::Literal(lit) => {
                 if !matches!(lit.value, LoxType::Nil) {
@@ -83,7 +141,21 @@ impl Resolver {
     }
 
     fn handle_return_stmt(self, mut e: stmt::Return) -> ResolverResult<Stmt> {
+        if matches!(self.function_state, FunctionState::None) {
+            return Err(ResolverError::new(
+                "Can't return from top level code",
+                e.keyword.line,
+                self.interpreter,
+            ));
+        }
         if let Some(val) = e.value {
+            if matches!(self.function_state, FunctionState::Initializer) {
+                return Err(ResolverError::new(
+                    "Cannot return a value from an initializer",
+                    e.keyword.line,
+                    self.interpreter,
+                ));
+            }
             let (expr, this) = self.resolve_expr(val)?;
             e.value = Some(expr);
             Ok((e.into(), this))
@@ -113,9 +185,14 @@ impl Resolver {
     }
 
     fn resolve_function_stmt(mut self, e: stmt::Function) -> ResolverResult<Stmt> {
-        self.declare(&e.name);
+        match self.declare(&e.name) {
+            Err(message) => {
+                return Err(ResolverError::new(message, e.name.line, self.interpreter));
+            }
+            _ => (),
+        }
         self.define(&e.name);
-        let (e, this) = self.resolve_function(e)?;
+        let (e, this) = self.resolve_function(e, FunctionState::Function)?;
         Ok((e.into(), this))
     }
 
@@ -150,21 +227,18 @@ impl Resolver {
                 (*e.right, this) = this.resolve_expr(*e.right)?;
                 Ok((e.into(), this))
             }
-            Expr::Call(e) => {
-                let (e, mut this) = self.resolve_expr(*e.callee)?;
-                match e {
-                    Expr::Call(mut e) => {
-                        let mut args = Vec::new();
-                        for arg in e.args {
-                            let arg_;
-                            (arg_, this) = this.resolve_expr(arg)?;
-                            args.push(arg_);
-                        }
-                        e.args = args;
-                        Ok((e.into(), this))
-                    }
-                    _ => panic!("??"),
+            Expr::Call(mut e) => {
+                let mut this;
+                (*e.callee, this) = self.resolve_expr(*e.callee)?;
+
+                let mut args = Vec::new();
+                for arg in e.args {
+                    let arg_;
+                    (arg_, this) = this.resolve_expr(arg)?;
+                    args.push(arg_);
                 }
+                e.args = args;
+                Ok((e.into(), this))
             }
             Expr::Grouping(e) => {
                 let (res, this) = self.resolve_expr(*e.expression)?;
@@ -193,7 +267,7 @@ impl Resolver {
                     if let Some(val) = el.get(&e.name.lexeme) {
                         if !val {
                             return Err(ResolverError::new(
-                                "Can't read local variable in its own initializer".into(),
+                                "Can't read local variable in its own initializer",
                                 e.name.line,
                                 this.interpreter,
                             ));
@@ -205,13 +279,42 @@ impl Resolver {
                 let e = this.resolve_local(e.into(), t);
                 Ok((e, this))
             }
+            Expr::Get(mut e) => {
+                let (obj, this) = self.resolve_expr(*e.object)?;
+                e.object = Box::new(obj);
+                Ok((e.into(), this))
+            }
+            Expr::Set(mut e) => {
+                let (value, this) = self.resolve_expr(*e.value)?;
+                let (obj, this) = this.resolve_expr(*e.object)?;
+                e.value = Box::new(value);
+                e.object = Box::new(obj);
+                Ok((e.into(), this))
+            }
+            Expr::This(e) => {
+                if !matches!(self.class_state, ClassState::Class) {
+                    return Err(ResolverError::new(
+                        "Cannot use 'this' outside of a class.",
+                        e.keyword.line,
+                        self.interpreter,
+                    ));
+                }
+                Ok((e.into(), self))
+            }
         }
     }
 
-    fn declare(&mut self, name: &Token) {
-        self.scopes
-            .last_mut()
-            .map(|top| top.insert(name.lexeme.clone(), false));
+    fn declare(&mut self, name: &Token) -> Result<(), String> {
+        match self.scopes.last_mut() {
+            Some(top) => {
+                if top.contains_key(&name.lexeme) {
+                    return Err("Already a variable with this name in this scope.".into());
+                }
+                top.insert(name.lexeme.clone(), false);
+            }
+            None => (),
+        };
+        Ok(())
     }
 
     fn define(&mut self, name: &Token) {
@@ -227,20 +330,32 @@ impl Resolver {
             .zip(0..)
             .find(|(scope, _)| scope.contains_key(&name.lexeme))
         {
-            e.depth(i);
+            e.set_depth(i);
         };
         e
         // .map(|(_, i)| self.interpreter.resolve(e, i));
     }
 
-    fn resolve_function(mut self, mut fun: stmt::Function) -> ResolverResult<Stmt> {
+    fn resolve_function(
+        mut self,
+        mut fun: stmt::Function,
+        state: FunctionState,
+    ) -> ResolverResult<Stmt> {
+        let curr = self.function_state;
+        self.function_state = state;
         self.begin_scope();
-        (&fun.params).into_iter().for_each(|param| {
-            self.declare(param);
+        for param in (&fun.params).into_iter() {
+            match self.declare(param) {
+                Err(message) => {
+                    return Err(ResolverError::new(message, param.line, self.interpreter));
+                }
+                _ => (),
+            }
             self.define(param);
-        });
+        }
         let (stmts, mut this) = self.resolve_statements(fun.body)?;
         this.end_scope();
+        this.function_state = curr;
         fun.body = stmts;
         Ok((fun.into(), this))
     }

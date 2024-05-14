@@ -2,23 +2,47 @@ use std::{cell::RefCell, rc::Rc};
 
 use crate::{
     environment::Environment,
-    errors::{InterruptKind, RuntimeResult},
+    errors::{InterruptKind, RuntimeError, RuntimeResult},
     interpreter::Interpreter,
     syntax::stmt::Function,
-    tokens::token::{LoxCallable, LoxCollableType, LoxType},
+    tokens::{
+        token::{LoxCallable, LoxCollableType, LoxType, Token},
+        token_type::TokenType,
+    },
 };
 
+#[derive(Debug, Clone, Copy)]
+pub enum FunctionKind {
+    Init,
+    Function,
+}
+#[derive(Debug, Clone)]
 pub struct LoxFunction {
     declaration: Function,
     closure: Rc<RefCell<Environment>>,
+    kind: FunctionKind,
 }
 
 impl LoxFunction {
-    pub fn new(declaration: Function, closure: Rc<RefCell<Environment>>) -> Self {
+    pub fn new(
+        declaration: Function,
+        closure: Rc<RefCell<Environment>>,
+        kind: FunctionKind,
+    ) -> Self {
         Self {
             declaration,
             closure,
+            kind,
         }
+    }
+    pub fn bind(&self, to: LoxType) -> Self {
+        let k = self.kind;
+        if !matches!(to, LoxType::Data(_)) {
+            panic!("Cannot bind function to a non instance object!")
+        }
+        let mut env = Environment::new(Some(Rc::clone(&self.closure)));
+        env.define("this", to);
+        return Self::new(self.declaration.clone(), Rc::new(RefCell::new(env)), k);
     }
 }
 
@@ -36,6 +60,7 @@ impl LoxCallable for LoxFunction {
         Box::new(Self::new(
             self.declaration.clone(),
             Rc::clone(&self.closure),
+            self.kind,
         ))
     }
     fn call(
@@ -55,9 +80,23 @@ impl LoxCallable for LoxFunction {
         match interpreter.execute_block(self.declaration.body.clone(), env) {
             Err(err) => match err.interrupt_kind {
                 InterruptKind::Builtin => Err(err),
-                InterruptKind::Return(val) => Ok((val, err.interpreter)),
+                InterruptKind::Return(val) => {
+                    if matches!(self.kind, FunctionKind::Init) {
+                        return match self.closure.borrow().get_at(&Token::dummy_this(), 0) {
+                            Err(e) => Err(RuntimeError::new(e.message, e.line, err.interpreter)),
+                            Ok(this) => Ok((this, err.interpreter)),
+                        };
+                    }
+                    Ok((val, err.interpreter))
+                }
             },
-            Ok(ret) => Ok((LoxType::Nil.into(), ret)),
+            Ok(ret) => match self.kind {
+                FunctionKind::Init => match self.closure.borrow().get_at(&Token::dummy_this(), 0) {
+                    Err(e) => Err(RuntimeError::new(e.message, e.line, ret)),
+                    Ok(val) => Ok((val, ret)),
+                },
+                _ => Ok((LoxType::Nil.into(), ret)),
+            },
         }
     }
 }

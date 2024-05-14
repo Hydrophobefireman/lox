@@ -1,8 +1,10 @@
 use crate::{
     errors::{ParseError, ParseResult},
     syntax::{
-        expr::{Assign, Binary, Call, Expr, Grouping, Literal, Logical, Unary, Variable},
-        stmt::{Block, Expression, Function, If, Print, Return, Stmt, Var, While},
+        expr::{
+            self, Assign, Binary, Call, Expr, Get, Grouping, Literal, Logical, Set, Unary, Variable,
+        },
+        stmt::{self, Block, Class, Expression, Function, If, Print, Return, Stmt, Var, While},
     },
     tokens::{
         token::{LoxCollableType, LoxType, Token},
@@ -39,9 +41,12 @@ impl Parser {
     }
 
     fn declaration(&mut self) -> ParseResult<Stmt> {
-        use TokenType::{Fun, Var};
+        use TokenType::{Class, Fun, Var};
 
-        let res = if check!(self.peek(), Fun) {
+        let res = if check!(self.peek(), Class) {
+            self.advance();
+            self.class_declaration()
+        } else if check!(self.peek(), Fun) {
             self.advance();
             self.function(LoxCollableType::Function)
         } else {
@@ -58,6 +63,25 @@ impl Parser {
             Err(err)
         })
     }
+    fn class_declaration(&mut self) -> ParseResult<Stmt> {
+        use TokenType::{Identifier, LeftBrace, RightBrace};
+
+        let name = self.consume(Identifier, &"Expected class name")?.clone();
+        self.consume(LeftBrace, "Expected '{' before class body")?;
+
+        let mut methods = Vec::new();
+        while !self.is_at_end() && !check!(self.peek(), RightBrace) {
+            let fun = self.function(LoxCollableType::Class)?;
+            match fun {
+                Stmt::Function(fun) => {
+                    methods.push(fun);
+                }
+                _ => panic!("Unexpected statement in class body"),
+            }
+        }
+        self.advance();
+        return Ok(Class::new(name, methods).into());
+    }
     fn function(&mut self, kind: LoxCollableType) -> ParseResult<Stmt> {
         use TokenType::{Comma, Identifier, LeftBrace, LeftParen, RightParen};
 
@@ -70,7 +94,7 @@ impl Parser {
             loop {
                 if params.len() >= 255 {
                     return Err(ParseError::new(
-                        "Can't have more than 255 params".into(),
+                        "Can't have more than 255 params",
                         self.peek().unwrap().line,
                     ));
                 }
@@ -272,11 +296,17 @@ impl Parser {
             let value = self.assignment()?;
             return match &expr {
                 Expr::Variable(var) => {
-                    let name = &var.name;
-                    Ok(Assign::new(name.clone(), Box::new(value), None).into())
+                    Ok(Assign::new(var.name.clone(), Box::new(value), None).into())
                 }
+                Expr::Get(get) => Ok(Set::new(
+                    Box::clone(&get.object),
+                    get.name.clone(),
+                    Box::new(value),
+                    None,
+                )
+                .into()),
                 _ => Err(ParseError::new(
-                    "Invalid l value for assignment".into(),
+                    "Invalid l value for assignment",
                     (&equals).line,
                 )),
             };
@@ -342,13 +372,17 @@ impl Parser {
         }
     }
     fn call(&mut self) -> ParseResult<Expr> {
-        use TokenType::LeftParen;
+        use TokenType::{Dot, Identifier, LeftParen};
 
         let mut expr = self.primary()?;
         loop {
             if check!(self.peek(), LeftParen) {
                 self.advance();
                 expr = self.handle_call(expr)?;
+            } else if check!(self.peek(), Dot) {
+                self.advance();
+                let name: &Token = self.consume(Identifier, "Expected property name after '.'")?;
+                expr = Get::new(Box::new(expr), name.clone(), None).into()
             } else {
                 break;
             }
@@ -364,7 +398,7 @@ impl Parser {
             loop {
                 if args.len() >= 255 {
                     return Err(ParseError::new(
-                        "Can't have more than 255 arguments".into(),
+                        "Can't have more than 255 arguments",
                         self.peek().unwrap().line,
                     ));
                 }
@@ -381,7 +415,7 @@ impl Parser {
     }
     fn primary(&mut self) -> ParseResult<Expr> {
         use TokenType::{
-            False, Identifier, LeftParen, Nil, Number, RightParen, Semicolon, String, True,
+            False, Identifier, LeftParen, Nil, Number, RightParen, Semicolon, String, This, True,
         };
         Ok(match self.advance().ty {
             False => LoxType::False.into(),
@@ -389,6 +423,7 @@ impl Parser {
             Nil => LoxType::Nil.into(),
             Number | String => self.previous().literal.clone().into(),
             Identifier => Variable::new(self.previous().clone(), None).into(),
+            This => expr::This::new(self.previous().clone(), None).into(),
             LeftParen => {
                 let expr = self.expression()?;
                 self.consume(RightParen, "Expected ')' after expression")?;

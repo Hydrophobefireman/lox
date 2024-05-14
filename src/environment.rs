@@ -34,7 +34,7 @@ impl Environment {
         self.values.insert(name.into(), value);
     }
 
-    pub fn assign(&mut self, name: Token, value: LoxType) -> EnvResult<()> {
+    pub fn assign(&mut self, name: &Token, value: LoxType) -> EnvResult<()> {
         if self.values.contains_key(&name.lexeme) {
             self.define(&name.lexeme, value);
             Ok(())
@@ -49,6 +49,33 @@ impl Environment {
                     name.line,
                 )),
             }
+        }
+    }
+    pub fn get_at(&self, name: &Token, dist: i32) -> EnvResult<LoxType> {
+        if dist == 0 {
+            self.values
+                .get(&name.lexeme)
+                .ok_or_else(|| {
+                    EnvError::new(format!("Undefined variable '{}'", name.lexeme), name.line)
+                })
+                .map(|f| f.clone())
+        } else {
+            let enc = self.enclosing.as_ref().unwrap();
+            let b = enc.borrow();
+            let res = b.get_at(name, dist - 1);
+            res
+        }
+    }
+
+    pub fn assign_at(&mut self, name: Token, value: LoxType, dist: i32) -> EnvResult<()> {
+        if dist == 0 {
+            self.define(&name.lexeme, value);
+            Ok(())
+        } else {
+            let enc = self.enclosing.as_ref().unwrap();
+            let mut b = enc.borrow_mut();
+            let res = b.assign_at(name, value, dist - 1);
+            res
         }
     }
 
