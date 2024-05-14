@@ -4,19 +4,39 @@ use crate::{
     errors::{LoxClassError, LoxClassResult, RuntimeResult},
     interpreter::Interpreter,
     lox_function::LoxFunction,
-    tokens::token::{LoxCallable, LoxCollableType, LoxInstanceValue, LoxType, Token},
+    tokens::token::{LoxCallable, LoxCallableType, LoxInstanceValue, LoxType, Token},
 };
+
+pub type SuperClass = Option<Rc<RefCell<LoxClass>>>;
 
 #[derive(Debug, Clone)]
 pub struct LoxClass {
     name: String,
     methods: HashMap<String, LoxFunction>,
+    superclass: SuperClass,
 }
 
 #[derive(Debug, Clone)]
 pub struct LoxInstance {
     pub this: LoxClass,
     fields: HashMap<String, LoxType>,
+}
+
+impl LoxClass {
+    pub fn new(
+        name: String,
+        methods: HashMap<String, LoxFunction>,
+        superclass: SuperClass,
+    ) -> Self {
+        Self {
+            name,
+            methods,
+            superclass,
+        }
+    }
+    fn find_method<T: Into<String>>(&self, method: T) -> Option<&LoxFunction> {
+        self.methods.get(&method.into())
+    }
 }
 
 impl LoxInstance {
@@ -43,49 +63,43 @@ impl LoxInstance {
     }
 }
 
-impl LoxClass {
-    pub fn new(name: String, methods: HashMap<String, LoxFunction>) -> Self {
-        Self { name, methods }
-    }
-    fn find_method(&self, method: &String) -> Option<&LoxFunction> {
-        self.methods.get(method)
-    }
-}
-
-impl From<LoxClass> for LoxType {
-    fn from(value: LoxClass) -> Self {
-        LoxType::Callable(Box::new(value))
-    }
-}
-impl From<LoxInstance> for LoxType {
-    fn from(value: LoxInstance) -> Self {
-        LoxType::Data(Rc::new(RefCell::new(value)))
-    }
-}
-
 impl LoxCallable for LoxClass {
-    fn kind(&self) -> LoxCollableType {
-        LoxCollableType::Class
+    fn kind(&self) -> LoxCallableType {
+        LoxCallableType::Class
     }
     fn arity(&self) -> usize {
-        0
+        match self.find_method("init") {
+            None => 0,
+            Some(init) => init.arity(),
+        }
     }
     fn name(&self) -> String {
         return self.name.clone();
     }
-    fn clone_box(&self) -> Box<dyn LoxCallable> {
-        Box::new(self.clone())
-    }
+    // fn clone_box(&self) -> Box<dyn LoxCallable> {
+    //     Box::new(self.clone())
+    // }
     fn call(
         &mut self,
         interpreter: Interpreter,
         args: Vec<LoxType>,
     ) -> RuntimeResult<(LoxType, Interpreter)> {
         let inst = LoxInstance::new(self.clone());
-        if let Some(initializer) = self.find_method(&"init".into()) {
+        if let Some(initializer) = self.find_method("init") {
             let (res, interp) = initializer.bind(inst.into()).call(interpreter, args)?;
             return Ok((res, interp));
         }
         Ok((inst.into(), interpreter))
+    }
+}
+
+impl From<LoxClass> for LoxType {
+    fn from(value: LoxClass) -> Self {
+        LoxType::Callable(Rc::new(RefCell::new(value)))
+    }
+}
+impl From<LoxInstance> for LoxType {
+    fn from(value: LoxInstance) -> Self {
+        LoxType::Data(Rc::new(RefCell::new(value)))
     }
 }

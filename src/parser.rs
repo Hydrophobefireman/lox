@@ -4,10 +4,10 @@ use crate::{
         expr::{
             self, Assign, Binary, Call, Expr, Get, Grouping, Literal, Logical, Set, Unary, Variable,
         },
-        stmt::{self, Block, Class, Expression, Function, If, Print, Return, Stmt, Var, While},
+        stmt::{Block, Class, Expression, Function, If, Print, Return, Stmt, Var, While},
     },
     tokens::{
-        token::{LoxCollableType, LoxType, Token},
+        token::{LoxCallableType, LoxType, Token},
         token_type::TokenType,
     },
 };
@@ -48,7 +48,7 @@ impl Parser {
             self.class_declaration()
         } else if check!(self.peek(), Fun) {
             self.advance();
-            self.function(LoxCollableType::Function)
+            self.function(LoxCallableType::Function)
         } else {
             if check!(self.peek(), Var) {
                 self.advance();
@@ -64,14 +64,23 @@ impl Parser {
         })
     }
     fn class_declaration(&mut self) -> ParseResult<Stmt> {
-        use TokenType::{Identifier, LeftBrace, RightBrace};
+        use TokenType::{Identifier, LeftBrace, Less, RightBrace};
 
-        let name = self.consume(Identifier, &"Expected class name")?.clone();
+        let name = self.consume(Identifier, "Expected class name")?.clone();
+        let superclass = if check!(self.peek(), Less) {
+            self.advance();
+            let sc = self
+                .consume(Identifier, "Expected superclass class name")?
+                .clone();
+            Some(expr::Variable::new(sc, None))
+        } else {
+            None
+        };
+
         self.consume(LeftBrace, "Expected '{' before class body")?;
-
         let mut methods = Vec::new();
         while !self.is_at_end() && !check!(self.peek(), RightBrace) {
-            let fun = self.function(LoxCollableType::Class)?;
+            let fun = self.function(LoxCallableType::Class)?;
             match fun {
                 Stmt::Function(fun) => {
                     methods.push(fun);
@@ -80,9 +89,9 @@ impl Parser {
             }
         }
         self.advance();
-        return Ok(Class::new(name, methods).into());
+        return Ok(Class::new(name, superclass, methods).into());
     }
-    fn function(&mut self, kind: LoxCollableType) -> ParseResult<Stmt> {
+    fn function(&mut self, kind: LoxCallableType) -> ParseResult<Stmt> {
         use TokenType::{Comma, Identifier, LeftBrace, LeftParen, RightParen};
 
         let name = self

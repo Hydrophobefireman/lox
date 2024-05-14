@@ -1,19 +1,23 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    cell::RefCell,
+    rc::Rc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use crate::{
     errors::RuntimeResult,
     interpreter::Interpreter,
-    tokens::token::{LoxCallable, LoxCollableType, LoxType},
+    tokens::token::{LoxCallable, LoxCallableType, LoxType},
 };
 #[derive(Debug)]
 pub struct Clock;
 
 impl LoxCallable for Clock {
-    fn kind(&self) -> LoxCollableType {
-        LoxCollableType::NativeFunction
+    fn kind(&self) -> LoxCallableType {
+        LoxCallableType::NativeFunction
     }
     fn name(&self) -> String {
-        "Clock".into()
+        String::from("Clock")
     }
 
     fn arity(&self) -> usize {
@@ -27,13 +31,13 @@ impl LoxCallable for Clock {
             .expect("Time went backwards");
         Ok((since_the_epoch.as_secs_f64().into(), i))
     }
-    fn clone_box(&self) -> Box<dyn LoxCallable> {
-        Box::new(Self {})
-    }
+    // fn clone_box(&self) -> Box<dyn LoxCallable> {
+    //     Box::new(Self {})
+    // }
 }
 
 impl From<Clock> for LoxType {
     fn from(value: Clock) -> Self {
-        LoxType::Callable(Box::new(value))
+        LoxType::Callable(Rc::new(RefCell::new(value)))
     }
 }

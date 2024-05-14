@@ -30,7 +30,7 @@ impl Environment {
         }
     }
     #[inline]
-    pub fn define(&mut self, name: &str, value: LoxType) {
+    pub fn define<T: Into<String>>(&mut self, name: T, value: LoxType) {
         self.values.insert(name.into(), value);
     }
 

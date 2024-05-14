@@ -3,7 +3,7 @@ use crate::{
     tokens::token::{LoxType, Token},
 };
 
-use super::expr::{Expr, Literal};
+use super::expr::{Expr, Literal, Variable};
 
 gen_struct!(Stmt,
     Expression, expression:Expr;
@@ -14,7 +14,7 @@ gen_struct!(Stmt,
     Var, name: Token, initializer: Expr;
     While, cond: Expr, body: Box<Stmt>;
     Block, statements: Vec<Stmt>;
-    Class, name: Token, methods: Vec<Function>
+    Class, name: Token, superclass: Option<Variable>,  methods: Vec<Function>
 );
 
 impl Default for Stmt {

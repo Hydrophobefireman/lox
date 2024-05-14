@@ -5,7 +5,7 @@ use crate::{
     lox_function::LoxFunction, tokens::token_type::TokenType,
 };
 pub trait LoxCallable {
-    fn kind(&self) -> LoxCollableType;
+    fn kind(&self) -> LoxCallableType;
     fn name(&self) -> String;
     fn arity(&self) -> usize;
     fn call(
@@ -13,7 +13,6 @@ pub trait LoxCallable {
         interpreter: Interpreter,
         args: Vec<LoxType>,
     ) -> RuntimeResult<(LoxType, Interpreter)>;
-    fn clone_box(&self) -> Box<dyn LoxCallable>;
 }
 impl std::fmt::Debug for dyn LoxCallable {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -22,17 +21,17 @@ impl std::fmt::Debug for dyn LoxCallable {
 }
 
 #[derive(Debug)]
-pub enum LoxCollableType {
+pub enum LoxCallableType {
     Function,
     Class,
     NativeFunction,
 }
 
-impl Clone for Box<dyn LoxCallable> {
-    fn clone(&self) -> Self {
-        self.clone_box()
-    }
-}
+// impl Clone for Box<dyn LoxCallable> {
+//     fn clone(&self) -> Self {
+//         self.clone_box()
+//     }
+// }
 
 pub enum LoxInstanceValue<'a> {
     Free(LoxType),
@@ -45,7 +44,7 @@ pub enum LoxType {
     True,
     False,
     Nil,
-    Callable(Box<dyn LoxCallable>),
+    Callable(Rc<RefCell<dyn LoxCallable>>),
     InternalNoValue,
     Data(Rc<RefCell<LoxInstance>>),
 }
@@ -72,7 +71,7 @@ impl Display for LoxType {
             LoxType::False => write!(f, "false"),
             LoxType::Nil => write!(f, "nil"),
             LoxType::InternalNoValue => write!(f, "(?unresolved?)"),
-            LoxType::Callable(c) => write!(f, "[{:?} {}]", c.kind(), c.name()),
+            LoxType::Callable(c) => write!(f, "[{:?} {}]", c.borrow().kind(), c.borrow().name()),
             LoxType::Data(inst) => write!(f, "{} {{}}", inst.borrow().this.name()),
         }
     }

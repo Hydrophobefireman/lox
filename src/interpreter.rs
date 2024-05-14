@@ -6,12 +6,9 @@ use crate::{
     globals::Clock,
     lox_class::LoxClass,
     lox_function::{FunctionKind, LoxFunction},
-    syntax::{
-        expr::Expr,
-        stmt::{Function, Stmt},
-    },
+    syntax::{expr::Expr, stmt::Stmt},
     tokens::{
-        token::{LoxInstanceValue, LoxType, Token},
+        token::{LoxCallable, LoxCallableType, LoxInstanceValue, LoxType, Token},
         token_type::TokenType,
     },
 };
@@ -125,7 +122,8 @@ impl Interpreter {
                 }
 
                 match callee {
-                    LoxType::Callable(mut f) => {
+                    LoxType::Callable(f) => {
+                        let mut f = f.borrow_mut();
                         if args.len() != f.arity() {
                             return Err(RuntimeError::new(
                                 format!("Expected {} args, got {}", f.arity(), args.len()),
@@ -307,6 +305,27 @@ impl Interpreter {
                 Ok((Default::default(), this))
             }
             Stmt::Class(cls) => {
+                let mut this = self;
+                let superclass = if let Some(sc) = cls.superclass {
+                    let superclass;
+                    (superclass, this) = this.evaluate(sc.into())?;
+                    if match superclass {
+                        LoxType::Callable(callable) => {
+                            !matches!(callable.borrow().kind(), LoxCallableType::Class)
+                        }
+                        _ => true,
+                    } {
+                        return Err(RuntimeError::new(
+                            "Superclass must be a class",
+                            cls.name.line,
+                            this,
+                        ));
+                    }
+                    None
+                } else {
+                    None
+                };
+
                 let methods = cls
                     .methods
                     .into_iter()
@@ -314,7 +333,7 @@ impl Interpreter {
                         let name = method.name.lexeme.clone();
                         let fun = LoxFunction::new(
                             method,
-                            Rc::clone(&self.env),
+                            Rc::clone(&this.env),
                             if name == "init" {
                                 FunctionKind::Init
                             } else {
@@ -324,12 +343,13 @@ impl Interpreter {
                         (name, fun)
                     })
                     .collect::<HashMap<_, _>>();
-                let function = LoxClass::new(cls.name.lexeme.clone(), methods);
-                self.env
+                let function = LoxClass::new(cls.name.lexeme.clone(), methods, superclass);
+
+                this.env
                     .borrow_mut()
                     .define(cls.name.lexeme.as_str(), function.into());
 
-                Ok((Default::default(), self))
+                Ok((Default::default(), this))
             }
         }
     }

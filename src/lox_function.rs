@@ -5,10 +5,7 @@ use crate::{
     errors::{InterruptKind, RuntimeError, RuntimeResult},
     interpreter::Interpreter,
     syntax::stmt::Function,
-    tokens::{
-        token::{LoxCallable, LoxCollableType, LoxType, Token},
-        token_type::TokenType,
-    },
+    tokens::token::{LoxCallable, LoxCallableType, LoxType, Token},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -47,8 +44,8 @@ impl LoxFunction {
 }
 
 impl LoxCallable for LoxFunction {
-    fn kind(&self) -> LoxCollableType {
-        LoxCollableType::Function
+    fn kind(&self) -> LoxCallableType {
+        LoxCallableType::Function
     }
     fn arity(&self) -> usize {
         self.declaration.params.len()
@@ -56,13 +53,13 @@ impl LoxCallable for LoxFunction {
     fn name(&self) -> String {
         return self.declaration.name.lexeme.clone();
     }
-    fn clone_box(&self) -> Box<dyn LoxCallable> {
-        Box::new(Self::new(
-            self.declaration.clone(),
-            Rc::clone(&self.closure),
-            self.kind,
-        ))
-    }
+    // fn clone_box(&self) -> Box<dyn LoxCallable> {
+    //     Box::new(Self::new(
+    //         self.declaration.clone(),
+    //         Rc::clone(&self.closure),
+    //         self.kind,
+    //     ))
+    // }
     fn call(
         &mut self,
         interpreter: Interpreter,
@@ -77,6 +74,7 @@ impl LoxCallable for LoxFunction {
             .for_each(|(param, arg)| {
                 env.define(&param.lexeme, arg.clone());
             });
+
         match interpreter.execute_block(self.declaration.body.clone(), env) {
             Err(err) => match err.interrupt_kind {
                 InterruptKind::Builtin => Err(err),
@@ -102,6 +100,6 @@ impl LoxCallable for LoxFunction {
 }
 impl From<LoxFunction> for LoxType {
     fn from(value: LoxFunction) -> Self {
-        LoxType::Callable(Box::new(value))
+        LoxType::Callable(Rc::new(RefCell::new(value)))
     }
 }

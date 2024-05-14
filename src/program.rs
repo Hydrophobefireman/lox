@@ -62,7 +62,7 @@ impl Program {
                 match self.interpreter.interpret(stmts) {
                     Err(r) => {
                         self.interpreter = r.interpreter;
-                        self.runtime_error(0, &r.message);
+                        self.runtime_error(r.line, &r.message);
                         (self, Default::default())
                     }
                     Ok(v) => {

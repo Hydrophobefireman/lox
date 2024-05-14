@@ -4,7 +4,7 @@ use crate::{
     errors::{ResolverError, ResolverResult},
     interpreter::Interpreter,
     syntax::{
-        expr::Expr,
+        expr::{self, Expr},
         stmt::{self, Stmt},
     },
     tokens::token::{LoxType, Token},
@@ -21,6 +21,7 @@ enum FunctionState {
 enum ClassState {
     None,
     Class,
+    Subclass,
 }
 #[derive(Debug)]
 pub struct Resolver {
@@ -71,12 +72,8 @@ impl Resolver {
         }
     }
     fn handle_class_stmt(mut self, mut cls: stmt::Class) -> ResolverResult<Stmt> {
-        self.begin_scope();
         let curr = self.class_state;
         self.class_state = ClassState::Class;
-        self.scopes
-            .last_mut()
-            .map(|scope| scope.insert("this".into(), true));
 
         match self.declare(&cls.name) {
             Err(message) => {
@@ -85,7 +82,34 @@ impl Resolver {
             _ => (),
         };
         self.define(&cls.name);
-        let mut this: Resolver = self;
+        let mut this = self;
+        if let Some(sc) = cls.superclass {
+            if sc.name.lexeme == cls.name.lexeme {
+                return Err(ResolverError::new(
+                    "A class cannot inherit itself",
+                    cls.name.line,
+                    this.interpreter,
+                ));
+            }
+            this.class_state = ClassState::Subclass;
+            let s;
+            (s, this) = this.resolve_expr(sc.into())?;
+            if let Expr::Variable(s) = s {
+                cls.superclass = Some(s)
+            } else {
+                panic!("Resolver error superclass back after resolution!")
+            }
+            this.begin_scope();
+            this.scopes
+                .last_mut()
+                .map(|scope| scope.insert("super".into(), true));
+        }
+
+        this.begin_scope();
+        this.scopes
+            .last_mut()
+            .map(|scope| scope.insert("this".into(), true));
+
         let mut methods = Vec::with_capacity(cls.methods.len());
         for method in cls.methods {
             let meth;
@@ -102,8 +126,11 @@ impl Resolver {
                 _ => panic!("Expected function??"),
             }
         }
-        cls.methods = methods;
+        if !matches!(cls.superclass, None) {
+            this.end_scope();
+        }
         this.end_scope();
+        cls.methods = methods;
         this.class_state = curr;
         Ok((cls.into(), this))
     }
@@ -299,7 +326,9 @@ impl Resolver {
                         self.interpreter,
                     ));
                 }
-                Ok((e.into(), self))
+                let t = &e.keyword.clone();
+                let e = self.resolve_local(e.into(), t);
+                Ok((e, self))
             }
         }
     }

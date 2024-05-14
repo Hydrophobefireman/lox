@@ -1,17 +1,3 @@
-class Bacon {
-  init(){
-    print "initing!";
-    return 6;
-  }
-  eat() {
-    print "Crunch crunch crunch!";
-  }
-}
+var NotAClass = "I am totally not a class";
 
-
-var b = Bacon();
-print b;
-b.lol = b.lmao = b.idc = "1";
-var c = b.eat();
-print b;
-print c;
+class Subclass < NotAClass {} // 
