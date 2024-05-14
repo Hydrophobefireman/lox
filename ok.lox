@@ -1,3 +1,27 @@
-var NotAClass = "I am totally not a class";
 
-class Subclass < NotAClass {} // 
+
+
+fun a() {
+  return b();
+}
+fun b() {
+  return c();
+}
+fun c() {
+  return d();
+}
+fun d() {
+  return e();
+}
+fun e() {
+  return f();
+}
+fun f() {
+  return "Hello, World!";
+}
+
+
+
+for (var i = 0; i<10000; i=i+1) {
+  a();
+}
