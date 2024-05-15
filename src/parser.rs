@@ -2,7 +2,8 @@ use crate::{
     errors::{ParseError, ParseResult},
     syntax::{
         expr::{
-            self, Assign, Binary, Call, Expr, Get, Grouping, Literal, Logical, Set, Unary, Variable,
+            self, Assign, Binary, Call, Expr, Get, Grouping, Literal, Logical, Set, Super, Unary,
+            Variable,
         },
         stmt::{Block, Class, Expression, Function, If, Print, Return, Stmt, Var, While},
     },
@@ -424,7 +425,8 @@ impl Parser {
     }
     fn primary(&mut self) -> ParseResult<Expr> {
         use TokenType::{
-            False, Identifier, LeftParen, Nil, Number, RightParen, Semicolon, String, This, True,
+            Dot, False, Identifier, LeftParen, Nil, Number, RightParen, Semicolon, String, This,
+            True,
         };
         Ok(match self.advance().ty {
             False => LoxType::False.into(),
@@ -437,6 +439,14 @@ impl Parser {
                 let expr = self.expression()?;
                 self.consume(RightParen, "Expected ')' after expression")?;
                 Grouping::new(Box::new(expr), None).into()
+            }
+            TokenType::Super => {
+                let kw = self.previous().clone();
+                self.consume(Dot, "Expect a . after 'super'")?;
+                let method = self
+                    .consume(Identifier, "Expect super method name")?
+                    .clone();
+                Super::new(kw, method, None).into()
             }
             Semicolon => {
                 // found a semicolon

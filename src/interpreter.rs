@@ -3,19 +3,19 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 use crate::{
     environment::{EnclosingEnv, Environment},
     errors::{RuntimeError, RuntimeResult},
-    globals::Clock,
+    globals::initialize_globals,
     lox_class::LoxClass,
     lox_function::{FunctionKind, LoxFunction},
     syntax::{expr::Expr, stmt::Stmt},
     tokens::{
-        token::{LoxCallable, LoxCallableType, LoxInstanceValue, LoxType, Token},
+        token::{ref_cell, LoxCallableType, LoxInstanceValue, LoxType, Token},
         token_type::TokenType,
     },
 };
 
 #[derive(Debug)]
 pub struct Interpreter {
-    env: EnclosingEnv,
+    pub env: EnclosingEnv,
     pub globals: EnclosingEnv,
 }
 
@@ -196,7 +196,7 @@ impl Interpreter {
                         Ok(res) => match res {
                             LoxInstanceValue::Free(res) => Ok((res, this)),
                             LoxInstanceValue::Bound(fun) => {
-                                let bound_fun = fun.bind(LoxType::Data(Rc::clone(&inst)));
+                                let bound_fun = fun.borrow().bind(LoxType::Data(Rc::clone(&inst)));
                                 Ok((bound_fun.into(), this))
                             }
                         },
@@ -230,6 +230,39 @@ impl Interpreter {
                 }
             }
             Expr::This(expr) => self.lookup_var(&expr.keyword.clone(), expr.into()),
+            Expr::Super(expr) => {
+                let dist = expr.depth.expect("Expected depth for super");
+                let x = self.env.borrow().get_at(&expr.keyword, dist);
+                let method_name = &expr.method.lexeme;
+                match x {
+                    Err(e) => Err(RuntimeError::new(e.message, e.line, self)),
+                    Ok(LoxType::Callable(val)) => {
+                        let cls = val;
+
+                        let this_ = self
+                            .env
+                            .borrow()
+                            .get_at(&Token::dummy_this(), dist - 1)
+                            .expect("This expected if accessing super!");
+                        match cls
+                            .borrow()
+                            .constructor()
+                            .expect("Expected a valid constructor as a super value.")
+                            .find_method(method_name)
+                        {
+                            Some(meth) => return Ok((meth.borrow().bind(this_).into(), self)),
+                            None => {
+                                return Err(RuntimeError::new(
+                                    format!("Could not find the method {method_name}"),
+                                    expr.method.line,
+                                    self,
+                                ))
+                            }
+                        };
+                    }
+                    _ => panic!("Interpreter found an invalid super object!"),
+                }
+            }
         }
     }
 
@@ -306,12 +339,21 @@ impl Interpreter {
             }
             Stmt::Class(cls) => {
                 let mut this = self;
+                let mut has_superclass = false;
                 let superclass = if let Some(sc) = cls.superclass {
+                    has_superclass = true;
                     let superclass;
                     (superclass, this) = this.evaluate(sc.into())?;
+                    let mut cons = None;
+                    let superclass_clone = superclass.clone();
                     if match superclass {
                         LoxType::Callable(callable) => {
-                            !matches!(callable.borrow().kind(), LoxCallableType::Class)
+                            if matches!(callable.borrow().kind(), LoxCallableType::Class) {
+                                cons = Some(Rc::clone(&callable));
+                                false
+                            } else {
+                                true
+                            }
                         }
                         _ => true,
                     } {
@@ -321,7 +363,9 @@ impl Interpreter {
                             this,
                         ));
                     }
-                    None
+                    this.env = ref_cell(Environment::new(Some(Rc::clone(&this.env))));
+                    this.env.borrow_mut().define("super", superclass_clone);
+                    cons
                 } else {
                     None
                 };
@@ -340,11 +384,15 @@ impl Interpreter {
                                 FunctionKind::Function
                             },
                         );
-                        (name, fun)
+                        (name, ref_cell(fun))
                     })
                     .collect::<HashMap<_, _>>();
-                let function = LoxClass::new(cls.name.lexeme.clone(), methods, superclass);
 
+                let function = LoxClass::new(cls.name.lexeme.clone(), methods, superclass);
+                if has_superclass {
+                    let e = Rc::clone(this.env.borrow().enclosing.as_ref().expect("Impossible?"));
+                    this.env = e
+                }
                 this.env
                     .borrow_mut()
                     .define(cls.name.lexeme.as_str(), function.into());
@@ -355,9 +403,7 @@ impl Interpreter {
     }
 
     pub fn new() -> Self {
-        let mut globals = Environment::new(None);
-        globals.define("clock", (Clock {}).into());
-        let globals = Rc::new(RefCell::new(globals));
+        let globals = ref_cell(initialize_globals());
         Self {
             env: Rc::clone(&globals),
             globals,
@@ -368,7 +414,7 @@ impl Interpreter {
         let mut this = self;
         let previous = Rc::clone(&this.env);
 
-        this.env = Rc::new(RefCell::new(env));
+        this.env = ref_cell(env);
         for stmt in statements {
             match this.execute(stmt) {
                 Err(mut e) => {

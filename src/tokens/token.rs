@@ -1,10 +1,16 @@
 use std::{cell::RefCell, fmt::Display, rc::Rc};
 
 use crate::{
-    errors::RuntimeResult, interpreter::Interpreter, lox_class::LoxInstance,
-    lox_function::LoxFunction, tokens::token_type::TokenType,
+    errors::RuntimeResult,
+    interpreter::Interpreter,
+    lox_class::{LoxClass, LoxInstance},
+    lox_function::LoxFunction,
+    tokens::token_type::TokenType,
 };
 pub trait LoxCallable {
+    fn constructor(&self) -> Option<&LoxClass> {
+        return None;
+    }
     fn kind(&self) -> LoxCallableType;
     fn name(&self) -> String;
     fn arity(&self) -> usize;
@@ -33,9 +39,9 @@ pub enum LoxCallableType {
 //     }
 // }
 
-pub enum LoxInstanceValue<'a> {
+pub enum LoxInstanceValue {
     Free(LoxType),
-    Bound(&'a LoxFunction),
+    Bound(Rc<RefCell<LoxFunction>>),
 }
 #[derive(Debug, Clone)]
 pub enum LoxType {
@@ -112,9 +118,13 @@ impl Token {
         }
     }
     pub fn dummy_this() -> Self {
+        Self::dummy("this", TokenType::This)
+    }
+
+    pub fn dummy<T: Into<String>>(x: T, ty: TokenType) -> Self {
         Self {
-            ty: TokenType::This,
-            lexeme: "this".into(),
+            ty,
+            lexeme: x.into(),
             literal: LoxType::Nil,
             line: 0,
         }
@@ -129,4 +139,8 @@ impl std::fmt::Display for Token {
             self.ty, self.lexeme, self.literal, self.line
         )
     }
+}
+
+pub fn ref_cell<T>(x: T) -> Rc<RefCell<T>> {
+    Rc::new(RefCell::new(x))
 }

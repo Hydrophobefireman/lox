@@ -330,6 +330,25 @@ impl Resolver {
                 let e = self.resolve_local(e.into(), t);
                 Ok((e, self))
             }
+            Expr::Super(e) => {
+                if matches!(self.class_state, ClassState::None) {
+                    return Err(ResolverError::new(
+                        "Can't use 'super' outside of a class.",
+                        e.keyword.line,
+                        self.interpreter,
+                    ));
+                }
+                if matches!(self.class_state, ClassState::Class) {
+                    return Err(ResolverError::new(
+                        "Can't use 'super' without a superclass.",
+                        e.keyword.line,
+                        self.interpreter,
+                    ));
+                }
+                let t = &e.keyword.clone();
+                let e = self.resolve_local(e.into(), t);
+                Ok((e, self))
+            }
         }
     }
 

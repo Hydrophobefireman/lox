@@ -9,7 +9,7 @@ pub type EnclosingEnv = Rc<RefCell<Environment>>;
 #[derive(Debug, Clone)]
 pub struct Environment {
     values: HashMap<String, LoxType>,
-    enclosing: Option<EnclosingEnv>,
+    pub enclosing: Option<EnclosingEnv>,
 }
 
 impl Default for Environment {
